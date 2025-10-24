@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!--
+        Allow connect-src to local backend (http://127.0.0.1:8000) and websocket endpoints.
+        Note: For production, narrow this to trusted origins only.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' http://127.0.0.1:8000 http://localhost:8000 ws://127.0.0.1:8000 ws://localhost:8000; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http://localhost:* http://127.0.0.1:* blob:;">
+    <title>OSINT Platform - Login</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="whatsapp-styles.css">
+</head>
+<body>
+    <div class="app-container" id="app">
+        <!-- Login Screen -->
+        <div class="login-container" id="loginScreen">
+            <div class="login-box">
+                <div class="logo-section">
+                    <h1>OSINT Platform</h1>
+                    <p class="tagline">Unified Digital Investigation Tool</p>
+                </div>
+                
+                <form id="loginForm" class="login-form">
+                    <div class="form-group">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" name="username" required autocomplete="username">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input type="password" id="password" name="password" required autocomplete="current-password">
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary btn-block">Login</button>
+                    
+                    <div class="error-message" id="loginError"></div>
+                </form>
+                
+                <div class="login-footer">
+                    <p>OSINT Platform v1.0.0</p>
+                    <p class="text-muted">For Law Enforcement Use Only</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Disclaimer Modal -->
+        <div class="modal" id="disclaimerModal" style="display: none;">
+            <div class="modal-content disclaimer-modal">
+                <h2>⚠️ Platform Disclaimer</h2>
+                <div class="disclaimer-text">
+                    <h3>MANDATORY ACCEPTANCE REQUIRED</h3>
+                    <p><strong>This OSINT Platform is designed exclusively for legitimate law enforcement investigations.</strong></p>
+                    
+                    <h4>Terms of Use:</h4>
+                    <ul>
+                        <li>All data must be obtained from publicly available sources only</li>
+                        <li>Users must comply with all applicable laws and regulations</li>
+                        <li>Misuse of this platform may result in legal consequences</li>
+                        <li>All actions are logged and auditable</li>
+                        <li>Data privacy and security protocols must be followed</li>
+                        <li>No unauthorized access or data collection is permitted</li>
+                    </ul>
+                    
+                    <h4>Privacy Notice:</h4>
+                    <p>This platform processes data locally. No information is sent to external servers without explicit user action (e.g., reverse image search). All case data is stored locally and encrypted.</p>
+                    
+                    <h4>Legal Compliance:</h4>
+                    <p>Users must ensure compliance with:</p>
+                    <ul>
+                        <li>Information Technology Act, 2000 (India)</li>
+                        <li>Personal Data Protection regulations</li>
+                        <li>Law enforcement authorization requirements</li>
+                        <li>Evidence handling and chain of custody protocols</li>
+                    </ul>
+                    
+                    <div class="disclaimer-checkbox">
+                        <label>
+                            <input type="checkbox" id="disclaimerAccept" required>
+                            <strong>I have read and accept all terms and conditions. I understand that I am authorized to use this platform for official law enforcement purposes only.</strong>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="modal-actions">
+                    <button class="btn btn-primary" id="acceptDisclaimer" disabled>Accept and Continue</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Dashboard (Hidden initially) -->
+        <div class="main-dashboard" id="mainDashboard" style="display: none;">
+            <nav class="sidebar">
+                <div class="sidebar-header">
+                    <h2>OSINT Platform</h2>
+                    <p class="user-info" id="userInfo"></p>
+                </div>
+                
+                <ul class="nav-menu">
+                    <li><a href="#" data-view="dashboard" class="active">📊 Dashboard</a></li>
+                    <li><a href="#" data-view="cases">📁 Cases</a></li>
+                    <li class="nav-divider">Investigation Tools</li>
+                    <li><a href="#" data-view="whatsapp">💬 WhatsApp Profiler</a></li>
+                    <li><a href="#" data-view="facial">👤 Facial Recognition</a></li>
+                    <li><a href="#" data-view="social">📱 Social Scraper</a></li>
+                    <li><a href="#" data-view="monitoring">🔍 Social Monitoring</a></li>
+                    <li><a href="#" data-view="username">🔎 Username Search</a></li>
+                    <li><a href="#" data-view="tracker">📞 Number/Email Tracker</a></li>
+                    <li class="nav-divider">System</li>
+                    <li><a href="#" data-view="reports">📄 Reports</a></li>
+                    <li><a href="#" data-view="admin" id="adminLink" style="display: none;">⚙️ Admin Panel</a></li>
+                </ul>
+                
+                <div class="sidebar-footer">
+                    <button class="btn btn-secondary btn-block" id="logoutBtn">Logout</button>
+                </div>
+            </nav>
+            
+            <main class="main-content">
+                <div class="content-header">
+                    <h1 id="contentTitle">Dashboard</h1>
+                    <div class="user-credits">
+                        Credits: <span id="userCredits">0</span>
+                    </div>
+                </div>
+                
+                <div class="content-body" id="contentBody">
+                    <h2>Welcome to OSINT Platform</h2>
+                    <p>Select a tool from the sidebar to begin your investigation.</p>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="whatsapp-module.js"></script>
+    <script src="renderer.js"></script>
+</body>
+</html>
