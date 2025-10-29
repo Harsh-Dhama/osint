@@ -72,7 +72,6 @@ def create_default_admin():
                 "created_at": datetime.utcnow().isoformat(),
                 "updated_at": datetime.utcnow().isoformat()
             })
-            })
             db.commit()
             print("✓ Created default admin user")
             print("  Username: admin")

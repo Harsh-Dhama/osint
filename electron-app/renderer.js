@@ -486,131 +486,76 @@ async function loadViewContent(view) {
             });
             break;
             
-        case 'tracker':
-            contentBody.innerHTML = `
-                <div class="card">
-                    <h2>📞 Number/Email Tracker</h2>
-                    <p>Search for information about phone numbers and email addresses</p>
-                    <div class="alert alert-info">
-                        <strong>Credits:</strong> Each search costs 10 credits. Your balance: <span id="tracker-credits">Loading...</span>
-                    </div>
-                    
-                    <div class="form-group mt-3">
-                        <label>Select Case</label>
-                        <select id="tracker-case-select" class="form-control">
-                            <option value="">Select a case...</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Search Type</label>
-                        <select id="tracker-type" class="form-control">
-                            <option value="phone">Phone Number</option>
-                            <option value="email">Email Address</option>
-                        </select>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>Enter Value</label>
-                        <input type="text" id="tracker-value" class="form-control" placeholder="e.g., +919876543210 or email@example.com">
-                    </div>
-                    
-                    <button id="tracker-search-btn" class="btn btn-primary">Search (10 Credits)</button>
-                    
-                    <div id="tracker-result" class="mt-3" style="display: none;">
-                        <h3>Search Results</h3>
-                        <p>Feature coming soon - bot-based tracking in progress</p>
-                    </div>
-                </div>
-            `;
-            // Load cases and credits
-            loadCasesForModule('tracker-case-select');
-            loadTrackerCredits();
-            document.getElementById('tracker-search-btn').addEventListener('click', async () => {
-                const caseId = document.getElementById('tracker-case-select').value;
-                const searchType = document.getElementById('tracker-type').value;
-                const searchValue = document.getElementById('tracker-value').value.trim();
-                const resultDiv = document.getElementById('tracker-result');
+        case 'username':
+            // Load the username searcher interface
+            try {
+                const usernameHtml = await fetch('username.html').then(r => r.text());
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(usernameHtml, 'text/html');
+                const usernameContainer = doc.querySelector('.username-container');
                 
-                if (!caseId) {
-                    alert('Please select a case');
-                    return;
-                }
-                if (!searchValue) {
-                    alert('Please enter a value to search');
-                    return;
-                }
-                
-                // Validate input format
-                if (searchType === 'phone' && !searchValue.match(/^\+?[0-9]{10,15}$/)) {
-                    alert('Please enter a valid phone number (10-15 digits, can start with +)');
-                    return;
-                }
-                
-                if (searchType === 'email' && !searchValue.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-                    alert('Please enter a valid email address');
-                    return;
-                }
-                
-                try {
-                    // Show loading
-                    resultDiv.style.display = 'block';
-                    resultDiv.innerHTML = '<p class="text-info">🔍 Searching... (10 credits will be deducted)</p>';
+                if (usernameContainer) {
+                    contentBody.innerHTML = usernameContainer.innerHTML;
                     
-                    // Perform search
-                    const searchData = {
-                        case_id: parseInt(caseId),
-                        search_type: searchType,
-                        search_value: searchValue
-                    };
-                    
-                    const result = await apiRequest('/api/tracker/search', 'POST', searchData);
-                    
-                    // Reload credits
-                    await loadTrackerCredits();
-                    
-                    // Display results
-                    resultDiv.innerHTML = `
-                        <div class="alert alert-success">
-                            <strong>✅ Search Completed!</strong> (10 credits deducted)
-                        </div>
-                        <div class="card mt-3">
-                            <h4>Search Details</h4>
-                            <p><strong>Search ID:</strong> ${result.id}</p>
-                            <p><strong>Case ID:</strong> ${result.case_id}</p>
-                            <p><strong>Search Type:</strong> ${result.search_type.toUpperCase()}</p>
-                            <p><strong>Search Value:</strong> ${result.search_value}</p>
-                            <p><strong>Timestamp:</strong> ${new Date(result.searched_at).toLocaleString()}</p>
-                            <p><strong>Credits Used:</strong> ${result.credits_used}</p>
-                        </div>
-                        <div class="alert alert-info mt-3">
-                            <strong>ℹ️ Search Initiated:</strong> Your search has been queued. 
-                            Results will be aggregated from multiple sources and available in the case file shortly.
-                            Check back in a few minutes.
-                        </div>
-                        <button class="btn btn-secondary mt-2" onclick="viewCaseSearches(${caseId})">View All Searches for This Case</button>
-                    `;
-                } catch (error) {
-                    console.error('Tracker search error:', error);
-                    
-                    // Check if insufficient credits error
-                    if (error.message && error.message.includes('Insufficient credits')) {
-                        resultDiv.innerHTML = `
-                            <div class="alert alert-danger">
-                                <strong>❌ Insufficient Credits</strong>
-                                <p>${error.message}</p>
-                                <p>Please contact an administrator to top up your credits.</p>
-                            </div>
-                        `;
+                    // Initialize the username module
+                    if (typeof UsernameSearcherModule !== 'undefined') {
+                        window.usernameSearcherModule = new UsernameSearcherModule();
                     } else {
-                        resultDiv.innerHTML = `
-                            <div class="alert alert-danger">
-                                <strong>❌ Error:</strong> ${error.message || 'Failed to perform search'}
-                            </div>
-                        `;
+                        const script = document.createElement('script');
+                        script.src = 'username-module.js';
+                        script.onload = () => {
+                            window.usernameSearcherModule = new UsernameSearcherModule();
+                        };
+                        document.body.appendChild(script);
                     }
+                } else {
+                    throw new Error('Username searcher content not found');
                 }
-            });
+            } catch (error) {
+                console.error('Failed to load username searcher:', error);
+                contentBody.innerHTML = `
+                    <div class="alert alert-danger">
+                        <strong>❌ Error:</strong> Failed to load username searcher. ${error.message}
+                    </div>
+                `;
+            }
+            break;
+        
+        case 'tracker':
+            // Load the full tracker interface from tracker.html
+            try {
+                const trackerHtml = await fetch('tracker.html').then(r => r.text());
+                // Extract just the tracker container content
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(trackerHtml, 'text/html');
+                const trackerContainer = doc.querySelector('.tracker-container');
+                
+                if (trackerContainer) {
+                    contentBody.innerHTML = trackerContainer.innerHTML;
+                    
+                    // Initialize the tracker module
+                    if (typeof TrackerModule !== 'undefined') {
+                        window.trackerModule = new TrackerModule();
+                    } else {
+                        // Load tracker module script dynamically if not already loaded
+                        const script = document.createElement('script');
+                        script.src = 'tracker-module.js';
+                        script.onload = () => {
+                            window.trackerModule = new TrackerModule();
+                        };
+                        document.body.appendChild(script);
+                    }
+                } else {
+                    throw new Error('Tracker content not found');
+                }
+            } catch (error) {
+                console.error('Failed to load tracker module:', error);
+                contentBody.innerHTML = `
+                    <div class="alert alert-danger">
+                        <strong>❌ Error:</strong> Failed to load tracker module. ${error.message}
+                    </div>
+                `;
+            }
             break;
             
         default:

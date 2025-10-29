@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Number/Email Search Tracker - OSINT Tool</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="tracker-styles.css">
+</head>
+<body>
+    <div id="trackerPage" class="tracker-container">
+        <!-- Header -->
+        <div class="tracker-header">
+            <h1 class="tracker-title">🔍 Number/Email Search Tracker</h1>
+            <div class="credit-balance">
+                <span class="credit-icon">💎</span>
+                <span>Credits:</span>
+                <span class="credit-amount" id="creditBalance">0</span>
+            </div>
+        </div>
+
+        <!-- Search Form -->
+        <form id="trackerForm" class="tracker-search-form">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="searchType">Search Type *</label>
+                    <select id="searchType" name="searchType" required>
+                        <option value="phone">Phone Number</option>
+                        <option value="email">Email Address</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="searchValue">Search Value *</label>
+                    <input type="text" 
+                           id="searchValue" 
+                           name="searchValue" 
+                           placeholder="Enter phone number or email"
+                           required>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="caseNumber">Case Number</label>
+                    <input type="text" 
+                           id="caseNumber" 
+                           name="caseNumber" 
+                           placeholder="Optional case reference">
+                </div>
+                <div class="form-group">
+                    <label for="officerName">Officer Name</label>
+                    <input type="text" 
+                           id="officerName" 
+                           name="officerName" 
+                           placeholder="Your name">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="badgeNumber">Badge Number</label>
+                    <input type="text" 
+                           id="badgeNumber" 
+                           name="badgeNumber" 
+                           placeholder="Badge ID">
+                </div>
+                <div class="form-group">
+                    <label for="department">Department</label>
+                    <input type="text" 
+                           id="department" 
+                           name="department" 
+                           placeholder="Department name">
+                </div>
+            </div>
+
+            <!-- Module Selection -->
+            <div class="modules-section">
+                <h3>Select Search Modules</h3>
+                <div id="modulesGrid" class="modules-grid">
+                    <!-- Modules will be rendered dynamically -->
+                </div>
+            </div>
+
+            <!-- Cost Summary -->
+            <div class="cost-summary">
+                <div class="cost-details">
+                    <div class="cost-item">
+                        <span class="cost-label">Selected Modules</span>
+                        <span class="cost-value" id="selectedCount">0</span>
+                    </div>
+                    <div class="cost-item">
+                        <span class="cost-label">Total Cost</span>
+                        <span class="cost-value sufficient" id="totalCost">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Submit Section -->
+            <div class="submit-section">
+                <button type="button" id="btnReset" class="btn-reset">
+                    ↺ Reset
+                </button>
+                <button type="submit" id="btnSubmit" class="btn-submit" disabled>
+                    🔍 Start Search
+                </button>
+            </div>
+        </form>
+
+        <!-- Results Section -->
+        <div id="resultsSection" class="tracker-results" style="display: none;">
+            <div class="results-header">
+                <h2 class="results-title">Search Results</h2>
+                <button id="btnExportPDF" class="btn-export">
+                    <span>📄</span>
+                    <span>Export PDF</span>
+                </button>
+            </div>
+
+            <!-- Search Status -->
+            <div id="searchStatus" class="search-status pending">
+                <div class="status-icon">⏳</div>
+                <div class="status-info">
+                    <div class="status-text">Pending</div>
+                    <div class="status-detail">Search queued for processing</div>
+                </div>
+            </div>
+
+            <!-- Results Tabs -->
+            <div class="results-tabs">
+                <button class="tab active" data-tab="summary" onclick="switchTab('summary')">
+                    Summary
+                </button>
+                <button class="tab" data-tab="modules" onclick="switchTab('modules')">
+                    Module Results
+                </button>
+            </div>
+
+            <!-- Tab Contents -->
+            <div id="summaryContent" class="tab-content active">
+                <div class="summary-grid">
+                    <div class="summary-card">
+                        <h4>Search Overview</h4>
+                        <p style="color: #6b7280;">Results will appear here after search completion</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="modulesContent" class="tab-content">
+                <div class="module-results">
+                    <p style="color: #6b7280;">Module results will appear here after search completion</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="tracker-module.js"></script>
+</body>
+</html>

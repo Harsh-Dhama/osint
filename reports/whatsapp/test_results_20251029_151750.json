@@ -1,0 +1,38 @@
+[
+  {
+    "phone_number": "916397675890",
+    "display_name": null,
+    "about": "block-refreshedBlock +91 63976 75890",
+    "profile_picture": "D:\\osint\\uploads\\whatsapp\\profiles\\916397675890.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-10-29T09:43:40.958860"
+  },
+  {
+    "phone_number": "918707798544",
+    "display_name": null,
+    "about": "favorite-refreshedAdd to favourites",
+    "profile_picture": "D:\\osint\\uploads\\whatsapp\\profiles\\918707798544.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-10-29T09:45:05.452941"
+  },
+  {
+    "phone_number": "917415337302",
+    "display_name": null,
+    "about": "block-refreshedBlock +91 7415 337 302",
+    "profile_picture": "D:\\osint\\uploads\\whatsapp\\profiles\\917415337302.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-10-29T09:46:27.857030"
+  }
+]

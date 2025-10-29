@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Social Media Username Searcher - OSINT Tool</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="username-styles.css">
+</head>
+<body>
+    <div id="usernameSearcherPage" class="username-container">
+        <!-- Header -->
+        <div class="username-header">
+            <h1 class="username-title">
+                <span>🔎</span>
+                Social Media Username Searcher
+            </h1>
+            <div class="cache-stats">
+                <div class="stat-item">
+                    <div class="stat-value" id="validCache">0</div>
+                    <div class="stat-label">Cached</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="totalSearches">0</div>
+                    <div class="stat-label">Total</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search Form -->
+        <form id="usernameSearchForm" class="username-search-form">
+            <div class="search-input-section">
+                <div class="username-input-group">
+                    <label for="usernameInput">Username to Search *</label>
+                    <input type="text" 
+                           id="usernameInput" 
+                           class="username-input"
+                           placeholder="Enter username (min 3 characters)"
+                           required
+                           minlength="3">
+                </div>
+            </div>
+
+            <div class="search-options">
+                <div class="option-group">
+                    <label for="caseId">Case ID (Optional)</label>
+                    <input type="number" 
+                           id="caseId" 
+                           placeholder="Link to case">
+                </div>
+                <div class="option-group">
+                    <label for="officerName">Officer Name (Optional)</label>
+                    <input type="text" 
+                           id="officerName" 
+                           placeholder="Your name">
+                </div>
+            </div>
+
+            <div class="cache-toggle">
+                <input type="checkbox" id="cacheToggle" checked>
+                <label for="cacheToggle">
+                    <strong>Use cached results</strong> (if available within 7 days) - Faster and reduces server load
+                </label>
+            </div>
+
+            <div class="search-actions">
+                <button type="submit" id="btnSearch" class="btn-search">
+                    🔍 Search Username
+                </button>
+                <button type="button" id="btnClearCache" class="btn-clear-cache">
+                    🗑️ Clear Cache
+                </button>
+            </div>
+        </form>
+
+        <!-- Results Section -->
+        <div id="resultsSection" class="username-results" style="display: none;">
+            <!-- Results Header -->
+            <div class="results-header">
+                <h2 class="results-title">Search Results</h2>
+                <div class="results-actions">
+                    <button id="btnExportPDF" class="btn-export-pdf">
+                        <span>📄</span>
+                        <span>Export PDF</span>
+                    </button>
+                    <button id="btnRefresh" class="btn-refresh">
+                        🔄 Refresh
+                    </button>
+                </div>
+            </div>
+
+            <!-- Status Banner -->
+            <div id="statusBanner" class="search-status-banner completed">
+                <div class="status-icon-large">✅</div>
+                <div class="status-content">
+                    <div class="status-title">Search Completed</div>
+                    <div class="status-subtitle">Found username on multiple platforms</div>
+                </div>
+            </div>
+
+            <!-- Statistics Cards -->
+            <div class="stats-grid">
+                <div class="stat-card blue">
+                    <div class="stat-card-value" id="totalPlatforms">0</div>
+                    <div class="stat-card-label">Platforms Checked</div>
+                </div>
+                <div class="stat-card green">
+                    <div class="stat-card-value" id="foundPlatforms">0</div>
+                    <div class="stat-card-label">Platforms Found</div>
+                </div>
+                <div class="stat-card orange">
+                    <div class="stat-card-value" id="successRate">0%</div>
+                    <div class="stat-card-label">Success Rate</div>
+                </div>
+            </div>
+
+            <!-- Platform Results Grid -->
+            <h3 style="margin-bottom: 15px; color: #1e3a8a;">Detected Platforms</h3>
+            <div id="platformsGrid" class="platforms-grid">
+                <!-- Platform cards will be rendered here -->
+            </div>
+        </div>
+    </div>
+
+    <script src="username-module.js"></script>
+</body>
+</html>
