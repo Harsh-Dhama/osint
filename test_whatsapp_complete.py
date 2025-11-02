@@ -123,32 +123,8 @@ def generate_pdfs(results):
     
     pdf_files = []
     
-    # Generate individual PDFs
-    print_status("info", f"Generating individual PDF reports...")
-    for idx, profile_data in enumerate(results, 1):
-        phone = profile_data.get("phone_number", "Unknown")
-        
-        try:
-            if profile_data.get("status") in ["success", "partial"]:
-                print_status("progress", f"[{idx}/{len(results)}] Generating PDF for {phone}...")
-                
-                pdf_path = generate_whatsapp_profile_pdf(
-                    profile_data=profile_data,
-                    case_id=CASE_ID,
-                    officer_name=OFFICER_NAME,
-                    output_dir="reports/whatsapp"
-                )
-                
-                print_status("success", f"PDF generated: {Path(pdf_path).name}")
-                pdf_files.append(pdf_path)
-            else:
-                print_status("warning", f"Skipping PDF for {phone} (scraping failed)")
-        except Exception as e:
-            print_status("error", f"PDF generation failed for {phone}: {e}")
-    
-    # Generate bulk PDF
-    print("\n" + "-"*70)
-    print_status("info", "Generating bulk PDF report...")
+    # Generate ONLY consolidated PDF (not individual PDFs)
+    print_status("info", "Generating consolidated PDF report with all profiles...")
     try:
         bulk_pdf_path = generate_whatsapp_bulk_pdf(
             profiles=results,
@@ -156,10 +132,12 @@ def generate_pdfs(results):
             officer_name=OFFICER_NAME,
             output_dir="reports/whatsapp"
         )
-        print_status("success", f"Bulk PDF generated: {Path(bulk_pdf_path).name}")
+        print_status("success", f"✅ Consolidated PDF generated: {Path(bulk_pdf_path).name}")
         pdf_files.append(bulk_pdf_path)
     except Exception as e:
-        print_status("error", f"Bulk PDF generation failed: {e}")
+        print_status("error", f"PDF generation failed: {e}")
+        import traceback
+        traceback.print_exc()
     
     return pdf_files
 

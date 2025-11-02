@@ -14,6 +14,7 @@ from backend.database.models import WhatsAppProfile, User, Case, AuditLog
 from backend.schemas.whatsapp import WhatsAppProfileCreate, WhatsAppProfileResponse, WhatsAppBulkUpload, WhatsAppExportRequest
 from backend.routers.auth import get_current_user
 from backend.modules.whatsapp_scraper import get_scraper_instance, close_scraper_instance
+from backend.utils.pdf_generator import generate_whatsapp_profile_pdf, generate_whatsapp_bulk_pdf
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["whatsapp"])
@@ -168,9 +169,9 @@ async def bulk_scrape(request: WhatsAppBulkUpload, db: Session = Depends(get_db)
                 failed_count += 1
                 results[phone] = {"error": str(e), "status": "failed"}
             
-            # Rate limiting between requests
+            # Rate limiting between requests (increased for reliability)
             if idx < len(request.phone_numbers):
-                delay = random.uniform(3, 6)
+                delay = random.uniform(5, 8)  # Increased from 3-6 to 5-8 seconds
                 logger.debug(f"[WhatsApp] AUTO-BULK: Waiting {delay:.1f}s before next...")
                 await asyncio.sleep(delay)
         
@@ -200,21 +201,82 @@ async def bulk_scrape(request: WhatsAppBulkUpload, db: Session = Depends(get_db)
 
 @router.post("/upload/csv")
 async def upload_csv(file: UploadFile = File(...), case_id: int = None, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    logger.info(f"[WhatsApp] Uploading CSV: {file.filename}")
-    if not file.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="Must be CSV")
+    """
+    Upload CSV or Excel file containing phone numbers for bulk scraping.
+    Automatically detects phone number column and extracts all valid numbers.
+    Supports: .csv, .xlsx, .xls files
+    """
+    logger.info(f"[WhatsApp] Uploading file: {file.filename}")
+    
+    # Validate file format
+    allowed_extensions = ['.csv', '.xlsx', '.xls']
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Invalid file format. Supported formats: CSV, XLSX, XLS. Got: {file_ext}"
+        )
+    
     try:
         contents = await file.read()
-        df = pd.read_csv(io.BytesIO(contents))
-        phone_columns = ['phone_number', 'phone', 'number', 'Phone Number']
-        phone_column = next((col for col in phone_columns if col in df.columns), None)
+        
+        # Parse file based on extension
+        if file_ext == '.csv':
+            df = pd.read_csv(io.BytesIO(contents))
+        else:  # .xlsx or .xls
+            df = pd.read_excel(io.BytesIO(contents))
+        
+        logger.info(f"[WhatsApp] File parsed: {len(df)} rows, columns: {df.columns.tolist()}")
+        
+        # Try to find phone number column (case-insensitive)
+        phone_columns = [
+            'phone_number', 'phone', 'number', 'Phone Number', 
+            'PHONE', 'mobile', 'Mobile', 'cell', 'contact',
+            'Phone', 'Number', 'Contact', 'Mobile Number'
+        ]
+        
+        phone_column = None
+        for col in df.columns:
+            if col in phone_columns or col.lower() in [pc.lower() for pc in phone_columns]:
+                phone_column = col
+                break
+        
         if not phone_column:
-            raise HTTPException(status_code=400, detail=f"Need phone_number column. Found: {df.columns.tolist()}")
-        phone_numbers = df[phone_column].dropna().astype(str).unique().tolist()
-        return {"message": "CSV parsed", "total_rows": len(df), "phone_numbers": phone_numbers, "count": len(phone_numbers)}
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Phone number column not found. Expected one of: {phone_columns[:5]}. Found columns: {df.columns.tolist()}"
+            )
+        
+        # Extract and clean phone numbers
+        phone_numbers = df[phone_column].dropna().astype(str).tolist()
+        
+        # Clean phone numbers: remove spaces, dashes, parentheses
+        cleaned_numbers = []
+        for num in phone_numbers:
+            # Remove common formatting characters
+            cleaned = num.strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+            # Only keep if it has digits
+            if any(c.isdigit() for c in cleaned):
+                cleaned_numbers.append(cleaned)
+        
+        # Remove duplicates while preserving order
+        unique_numbers = list(dict.fromkeys(cleaned_numbers))
+        
+        logger.info(f"[WhatsApp] Extracted {len(unique_numbers)} unique phone numbers from {len(df)} rows")
+        
+        return {
+            "message": "File parsed successfully",
+            "total_rows": len(df),
+            "phone_numbers": unique_numbers,
+            "count": len(unique_numbers),
+            "filename": file.filename,
+            "column_used": phone_column
+        }
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"[WhatsApp] CSV error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"[WhatsApp] File upload error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error parsing file: {str(e)}")
 
 @router.get("/case/{case_id}", response_model=List[WhatsAppProfileResponse])
 async def get_case_profiles(case_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -263,3 +325,145 @@ async def close_session(current_user: User = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"[WhatsApp] Close error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/profile/{profile_id}/export-pdf")
+async def export_profile_pdf(
+    profile_id: int, 
+    officer_name: str = "John Doe",
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generate a professional PDF report for a single WhatsApp profile.
+    Matches the WAProfiler format shown in the reference images.
+    """
+    logger.info(f"[WhatsApp] Generating PDF for profile {profile_id}")
+    
+    # Get profile from database
+    profile = db.query(WhatsAppProfile).filter(WhatsAppProfile.id == profile_id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    
+    try:
+        # Convert profile to dict
+        profile_data = {
+            "phone_number": profile.phone_number,
+            "display_name": profile.display_name,
+            "about": profile.about,
+            "profile_picture": profile.profile_picture_path,
+            "profile_picture_path": profile.profile_picture_path,
+            "last_seen": profile.last_seen,
+            "is_available": profile.is_available,
+            "scraped_at": profile.scraped_at.strftime("%Y-%m-%d %H:%M:%S") if profile.scraped_at else None,
+            "status": "success",
+            "method": "database_export"
+        }
+        
+        # Generate PDF
+        case_id = f"C-{profile.case_id}" if profile.case_id else "C-UNKNOWN"
+        pdf_path = generate_whatsapp_profile_pdf(
+            profile_data=profile_data,
+            case_id=case_id,
+            officer_name=officer_name
+        )
+        
+        # Log audit
+        db.add(AuditLog(
+            user_id=current_user.id,
+            action="whatsapp_pdf_export",
+            module="whatsapp",
+            details=f"Generated PDF report for profile {profile_id} ({profile.phone_number})",
+            timestamp=datetime.utcnow()
+        ))
+        db.commit()
+        
+        # Get filename for response
+        filename = os.path.basename(pdf_path)
+        
+        logger.info(f"[WhatsApp] PDF generated: {pdf_path}")
+        return {
+            "success": True,
+            "message": "PDF report generated successfully",
+            "filename": filename,
+            "download_url": f"/api/whatsapp/download-pdf/{filename}"
+        }
+    except Exception as e:
+        logger.error(f"[WhatsApp] PDF generation error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
+
+@router.get("/download-pdf/{filename}")
+async def download_pdf(filename: str, current_user: User = Depends(get_current_user)):
+    """Download a generated PDF report"""
+    filepath = os.path.join("reports", "whatsapp", filename)
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="PDF file not found")
+    return FileResponse(
+        filepath, 
+        media_type="application/pdf", 
+        filename=filename
+    )
+
+@router.post("/case/{case_id}/export-pdf")
+async def export_case_pdf(
+    case_id: int,
+    officer_name: str = "John Doe",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Generate a bulk PDF report for all profiles in a case.
+    Includes summary statistics and detailed table of all profiles.
+    """
+    logger.info(f"[WhatsApp] Generating bulk PDF for case {case_id}")
+    
+    # Get all profiles for this case
+    profiles = db.query(WhatsAppProfile).filter(WhatsAppProfile.case_id == case_id).all()
+    if not profiles:
+        raise HTTPException(status_code=404, detail="No profiles found for this case")
+    
+    try:
+        # Convert profiles to dict list
+        profiles_data = []
+        for profile in profiles:
+            profiles_data.append({
+                "phone_number": profile.phone_number,
+                "display_name": profile.display_name,
+                "about": profile.about,
+                "profile_picture": profile.profile_picture_path,
+                "profile_picture_path": profile.profile_picture_path,
+                "last_seen": profile.last_seen,
+                "is_available": profile.is_available,
+                "scraped_at": profile.scraped_at.strftime("%Y-%m-%d %H:%M:%S") if profile.scraped_at else None,
+            })
+        
+        # Generate bulk PDF
+        case_code = f"C-{case_id}"
+        pdf_path = generate_whatsapp_bulk_pdf(
+            profiles=profiles_data,
+            case_id=case_code,
+            officer_name=officer_name
+        )
+        
+        # Log audit
+        db.add(AuditLog(
+            user_id=current_user.id,
+            action="whatsapp_bulk_pdf_export",
+            module="whatsapp",
+            details=f"Generated bulk PDF for case {case_id} with {len(profiles)} profiles",
+            timestamp=datetime.utcnow()
+        ))
+        db.commit()
+        
+        filename = os.path.basename(pdf_path)
+        
+        logger.info(f"[WhatsApp] Bulk PDF generated: {pdf_path}")
+        return {
+            "success": True,
+            "message": f"Bulk PDF report generated for {len(profiles)} profiles",
+            "filename": filename,
+            "profile_count": len(profiles),
+            "download_url": f"/api/whatsapp/download-pdf/{filename}"
+        }
+    except Exception as e:
+        logger.error(f"[WhatsApp] Bulk PDF generation error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")

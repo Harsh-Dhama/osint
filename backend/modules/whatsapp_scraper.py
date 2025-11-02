@@ -14,6 +14,10 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+import cv2
+import numpy as np
+from PIL import Image
+import re
 
 # Set Windows Proactor event loop policy for Playwright subprocess support
 if sys.platform.startswith("win"):
@@ -922,16 +926,27 @@ class WhatsAppScraper:
 
     async def auto_navigate_and_extract(self, phone_number: str) -> Dict[str, Any]:
         """
-        FULLY AUTOMATED: Navigate to chat link and extract all data automatically.
+        FULLY AUTOMATED: Navigate to new chat for each contact and extract all data automatically.
         This is the main method for fully automated scraping.
-        User provides only phone number, system does everything.
         
+        Process:
+        1. Navigate to web.whatsapp.com/send?phone=NUMBER (opens NEW chat window)
+        2. Wait for chat to load completely
+        3. Automatically click header to open contact's profile drawer
+        4. Extract name, bio/about, profile picture from CONTACT's profile
+        5. Verify we're viewing the correct contact (not our own profile)
+        6. Return complete profile data
+        
+        User provides only phone number, system does everything automatically.
         Returns complete profile data ready for frontend display and report generation.
         """
         logger.info("[WhatsAppScraper] AUTO-NAVIGATE: Starting fully automated extraction for %s", phone_number)
         
+        # Convert to string first (handles int, numpy.int64, etc.)
+        phone_number_str = str(phone_number)
+        
         result = {
-            "phone_number": phone_number,
+            "phone_number": phone_number_str,
             "display_name": None,
             "about": None,
             "profile_picture": None,
@@ -947,42 +962,84 @@ class WhatsAppScraper:
             if not self.page:
                 raise RuntimeError("Scraper not initialized")
             
-            # Clean phone number
-            clean = "".join([c for c in phone_number if c.isdigit()])
+            # Clean phone number (remove non-digits)
+            clean = "".join([c for c in phone_number_str if c.isdigit()])
             if not clean:
                 result["error"] = "Invalid phone number format"
                 result["status"] = "failed"
                 return result
             
-            # Navigate to direct WhatsApp chat link
+            # Navigate to direct WhatsApp chat link (opens NEW chat for this contact)
             url = f"https://web.whatsapp.com/send?phone={clean}"
-            logger.info("[WhatsAppScraper] AUTO-NAVIGATE: Opening %s", url)
+            logger.info("[WhatsAppScraper] AUTO-NAVIGATE: Opening NEW chat window for %s", url)
             
-            await self.page.goto(url, wait_until="networkidle", timeout=30000)
-            logger.info("[WhatsAppScraper] AUTO-NAVIGATE: Page loaded, waiting for chat to render...")
+            # Use domcontentloaded first (faster), then wait for specific elements
+            await self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            logger.info("[WhatsAppScraper] AUTO-NAVIGATE: Page DOM loaded, waiting for WhatsApp UI...")
             
-            # CRITICAL: For new/unknown numbers, WhatsApp needs time to load chat UI
-            # Poll for header readiness (WhatsApp shows minimal UI first, then full header)
+            # Wait for WhatsApp to render (it's a React SPA that loads in stages)
+            # Increased wait time to ensure chat fully loads
+            await asyncio.sleep(12.0)
+            
+            # Check if we're actually logged in
+            try:
+                # If QR code is visible, we're not logged in
+                qr_visible = await self.page.query_selector('canvas[aria-label="Scan this QR code to link a device!"]')
+                if qr_visible:
+                    result["error"] = "Not logged in to WhatsApp - QR code visible"
+                    result["status"] = "failed"
+                    logger.error("[WhatsAppScraper] AUTO-NAVIGATE: ❌ Not logged in! QR code is visible")
+                    try:
+                        await self.page.screenshot(path=f"reports/whatsapp/not_logged_in_{clean}.png")
+                    except:
+                        pass
+                    return result
+            except Exception:
+                pass
+            
+            # CRITICAL: WhatsApp loads UI in stages, especially for new/unsaved contacts
+            # We need to wait for the chat header to fully load before proceeding
+            logger.info("[WhatsAppScraper] AUTO-NAVIGATE: Waiting for chat UI to render...")
             header_ready = False
-            for attempt in range(5):
+            for attempt in range(15):  # More attempts
                 try:
-                    # Check if header with name OR profile pic is loaded
-                    header = await self.page.query_selector('header span[title], header img[src*="whatsapp.net"]')
+                    # Check if chat header is loaded (indicates chat is ready)
+                    header = await self.page.query_selector('header[data-testid="conversation-header"]')
                     if header:
-                        header_ready = True
-                        logger.info(f"[WhatsAppScraper] AUTO-NAVIGATE: ✓ Header ready after {attempt + 1} attempts")
-                        break
-                except Exception:
-                    pass
-                await asyncio.sleep(2.0)
+                        # Verify header has content (name or profile pic)
+                        has_content = await self.page.evaluate("""
+                            () => {
+                                const header = document.querySelector('header[data-testid="conversation-header"]');
+                                if (!header) return false;
+                                // Check for name or profile picture
+                                const hasName = header.querySelector('span[dir="auto"]');
+                                const hasPic = header.querySelector('img');
+                                return !!(hasName || hasPic);
+                            }
+                        """)
+                        if has_content:
+                            header_ready = True
+                            logger.info(f"[WhatsAppScraper] AUTO-NAVIGATE: ✓✓ Chat header ready after {attempt + 1} attempts")
+                            break
+                except Exception as e:
+                    logger.debug(f"[WhatsAppScraper] Header check error: {e}")
+                logger.debug(f"[WhatsAppScraper] AUTO-NAVIGATE: Waiting for header... attempt {attempt + 1}/15")
+                await asyncio.sleep(9.0)  # Longer wait between checks
             
             if not header_ready:
-                logger.warning("[WhatsAppScraper] AUTO-NAVIGATE: Header not detected after polling, continuing anyway")
+                logger.warning("[WhatsAppScraper] AUTO-NAVIGATE: Header not fully loaded after 15 attempts (45 seconds)")
+                # Take screenshot for debugging
+                try:
+                    await self.page.screenshot(path=f"reports/whatsapp/header_not_loaded_{clean}.png")
+                    logger.warning(f"[WhatsAppScraper] Debug screenshot saved: reports/whatsapp/header_not_loaded_{clean}.png")
+                except:
+                    pass
+                logger.warning("[WhatsAppScraper] AUTO-NAVIGATE: Attempting extraction anyway (may fail)...")
             
-            # Final wait for all elements to be interactive
-            await asyncio.sleep(2.0)
+            # Additional wait for animations/lazy loading
+            await asyncio.sleep(7.0)  # Longer wait for animations
             
-            # Check if number is invalid
+            # Check if number is invalid/not on WhatsApp
             try:
                 invalid_el = await self.page.query_selector('div[data-testid="invalid-number"]')
                 if invalid_el:
@@ -993,53 +1050,85 @@ class WhatsAppScraper:
             except Exception:
                 pass
             
-            # Extract data using all available methods
+            # Extract data using sequential methods (each builds on the previous)
             logger.info("[WhatsAppScraper] AUTO-NAVIGATE: Extracting profile data...")
             
-            # Method 1: Try standard selectors
-            name = await self._try_extract_name()
-            if name:
-                result["display_name"] = name
-                result["is_available"] = True
+            # Method 1: Open profile drawer to get full details (name, bio, profile pic)
+            # This is the PRIMARY extraction method - opens contact's profile drawer
+            logger.info("[WhatsAppScraper] AUTO-NAVIGATE: Opening contact's profile drawer...")
+            drawer_name, about, photo = await self._try_extract_profile_drawer(clean)
             
-            # Method 2: Try opening profile drawer for more data
-            about, photo = await self._try_extract_profile_drawer(clean)
+            # Use drawer data (most reliable)
+            if drawer_name:
+                result["display_name"] = drawer_name
+                result["is_available"] = True
+                logger.info(f"[WhatsAppScraper] AUTO-NAVIGATE: ✓ Got name from drawer: {drawer_name}")
             if about:
                 result["about"] = about
+                logger.info(f"[WhatsAppScraper] AUTO-NAVIGATE: ✓ Got bio: {about[:50]}...")
             if photo:
                 result["profile_picture"] = photo
+                logger.info(f"[WhatsAppScraper] AUTO-NAVIGATE: ✓ Got profile picture: {photo}")
             
-            # Method 3: If still no data, use JS extraction
+            # Method 2: Fallback - Try quick name extraction from chat header (only if drawer failed)
             if not result["display_name"]:
-                logger.info("[WhatsAppScraper] AUTO-NAVIGATE: Using JS extraction fallback...")
+                logger.info("[WhatsAppScraper] AUTO-NAVIGATE: Drawer name failed, trying header fallback...")
+                name = await self._try_extract_name()
+                if name:
+                    result["display_name"] = name
+                    result["is_available"] = True
+                    logger.info(f"[WhatsAppScraper] AUTO-NAVIGATE: ✓ Got name from header: {name}")
+            
+            # Method 3: If still no data, use JS extraction fallback
+            if not result["display_name"] and not result["about"] and not result["profile_picture"]:
+                logger.info("[WhatsAppScraper] AUTO-NAVIGATE: Using JavaScript extraction fallback...")
                 js_data = await self._extract_profile_from_raw_data(clean)
                 if js_data:
-                    result.update(js_data)
+                    # Merge JS data (only fill in missing fields)
+                    for key, value in js_data.items():
+                        if value and not result.get(key):
+                            result[key] = value
                     result["method"] = "auto_navigate_js_fallback"
+                    logger.info(f"[WhatsAppScraper] AUTO-NAVIGATE: ✓ JS fallback provided: {js_data}")
             
-            # Set final status
-            if result["display_name"] or result["is_available"]:
+            # Set final status based on what we extracted
+            if result["display_name"] or result["about"] or result["profile_picture"]:
                 result["status"] = "success"
+                result["is_available"] = True
             else:
                 result["status"] = "partial"
-                result["error"] = "Could not extract profile data"
+                result["error"] = "Could not extract profile data (contact may have strict privacy settings)"
             
-            logger.info("[WhatsAppScraper] AUTO-NAVIGATE: Extraction complete - %s", result["status"])
+            logger.info("[WhatsAppScraper] AUTO-NAVIGATE: Extraction complete - Status: %s, Name: %s, Bio: %s, Photo: %s", 
+                       result["status"], 
+                       result["display_name"] or "None", 
+                       ("Yes" if result["about"] else "None"),
+                       ("Yes" if result["profile_picture"] else "None"))
             return result
             
         except Exception as e:
             logger.exception("[WhatsAppScraper] AUTO-NAVIGATE: Error: %s", e)
             result["error"] = str(e)
             result["status"] = "failed"
+            # Capture debug screenshot on error
+            try:
+                await self._capture_debug_artifacts(prefix=f"auto_extract_error_{clean}")
+            except:
+                pass
             return result
     
     async def _try_extract_name(self) -> Optional[str]:
-        """Try multiple selectors to get display name - FILTER OUT placeholder text."""
+        """
+        Extract display name ONLY from NEW CHAT header (right side of screen).
+        CRITICAL: Must be from the chat conversation area, NOT from sidebar or other areas.
+        """
+        logger.info("[WhatsAppScraper] Extracting name from NEW CHAT header only...")
+        
+        # STRICT: Only target the conversation header on the RIGHT side (x > 400px)
         name_selectors = [
-            'header span[data-testid="conversation-info-header-chat-title"]',
-            'header span[title]',
-            'header [data-testid="contact-name"]',
-            'header span[dir="auto"]',
+            'header[data-testid="conversation-header"] span[data-testid="conversation-info-header-chat-title"]',
+            'div[data-testid="conversation-panel-wrapper"] header span[title]',
+            'header[data-testid="conversation-header"] span[dir="auto"]',
         ]
         
         # Placeholder texts to ignore (these are NOT real names)
@@ -1048,6 +1137,7 @@ class WhatsAppScraper:
             'click here',
             'tap here',
             'loading',
+            'whatsapp',
             '',
         ]
         
@@ -1055,36 +1145,420 @@ class WhatsAppScraper:
             try:
                 el = await self.page.query_selector(sel)
                 if el:
-                    name = (await el.get_attribute("title")) or (await el.text_content())
-                    if name and name.strip():
-                        name_clean = name.strip().lower()
-                        # Check if it's a valid name (not a placeholder)
-                        if name_clean not in invalid_names and len(name_clean) > 2:
-                            logger.info("[WhatsAppScraper] ✓ Found valid name via selector %s: %s", sel, name.strip())
-                            return name.strip()
-                        else:
-                            logger.debug(f"[WhatsAppScraper] Ignoring placeholder text: {name.strip()}")
-            except Exception:
+                    # VERIFY: Element is on the right side of screen (chat area)
+                    box = await el.bounding_box()
+                    if box and box['x'] > 350:  # Right side of screen
+                        name = (await el.get_attribute("title")) or (await el.text_content())
+                        if name and name.strip():
+                            name_clean = name.strip().lower()
+                            # Check if it's a valid name (not a placeholder)
+                            if name_clean not in invalid_names and len(name_clean) > 2:
+                                logger.info("[WhatsAppScraper] ✓ Found valid name from CHAT header (x=%.0f): %s", box['x'], name.strip())
+                                return name.strip()
+                            else:
+                                logger.debug(f"[WhatsAppScraper] Ignoring placeholder text: {name.strip()}")
+                    else:
+                        logger.debug(f"[WhatsAppScraper] Skipping element (wrong position: x={box['x'] if box else 'none'})")
+            except Exception as e:
+                logger.debug(f"[WhatsAppScraper] Selector {sel} failed: {e}")
                 continue
         return None
     
-    async def _try_extract_profile_drawer(self, clean_number: str) -> Tuple[Optional[str], Optional[str]]:
+    async def _extract_name_about_from_drawer_dom(self, phone_number: str) -> Tuple[Optional[str], Optional[str]]:
         """
-        Open contact's profile drawer using ROBUST DOM selector chain.
-        Implements senior-level engineering approach with multiple fallback strategies.
+        Extract name and about directly from drawer DOM using JavaScript.
+        This is the PRIMARY method - more reliable than OCR.
         
-        Selector Priority Chain:
-        1. header[data-testid="conversation-header"] - Most stable
-        2. header[role="button"] span[dir="auto"] - Name-based
-        3. header picture img[src*="whatsapp.net"] - Profile pic
-        4. JavaScript click bypass - Animation/overlay workaround
-        5. Retry with progressive waits - A/B test variations
+        Args:
+            phone_number: Phone number for logging
+            
+        Returns:
+            Tuple[name, about]: Extracted name and about from drawer DOM
+        """
+        try:
+            logger.info(f"[WhatsAppScraper] 🎯 PRIMARY: Extracting name and about from drawer DOM for {phone_number}")
+            
+            # Wait a bit to ensure drawer is fully loaded
+            await asyncio.sleep(2.0)
+            
+            # JavaScript to extract name and about from the opened drawer
+            result = await self.page.evaluate("""
+                () => {
+                    const drawer = document.querySelector('div[data-testid="drawer-right"]');
+                    if (!drawer) {
+                        console.log('[DOM] Drawer not found');
+                        return { success: false, error: 'Drawer not found' };
+                    }
+                    
+                    console.log('[DOM] Drawer found, extracting data...');
+                    let name = null;
+                    let about = null;
+                    
+                    // ========== EXTRACT NAME ==========
+                    // Strategy 1: Look for main header/title
+                    const headerElements = drawer.querySelectorAll('h2, [role="heading"], span[dir="auto"]');
+                    for (let elem of headerElements) {
+                        const text = elem.textContent?.trim();
+                        if (!text) continue;
+                        
+                        // Skip if it's just a phone number
+                        const digitsOnly = text.replace(/[^0-9]/g, '');
+                        if (digitsOnly.length >= 10) {
+                            console.log('[DOM] Skipping phone number:', text);
+                            continue;
+                        }
+                        
+                        // Skip common labels
+                        const lowerText = text.toLowerCase();
+                        if (lowerText.includes('contact info') || 
+                            lowerText.includes('media') || 
+                            lowerText.includes('about') ||
+                            lowerText.includes('starred') ||
+                            lowerText.includes('mute')) {
+                            continue;
+                        }
+                        
+                        // This should be the name
+                        if (text.length >= 2 && text.length <= 50 && !name) {
+                            name = text;
+                            console.log('[DOM] ✓ Found name:', name);
+                            break;
+                        }
+                    }
+                    
+                    // ========== EXTRACT ABOUT/BIO ==========
+                    // Strategy 1: Look for section with "About" header
+                    const sections = drawer.querySelectorAll('section');
+                    for (let section of sections) {
+                        const sectionText = section.textContent || '';
+                        
+                        // Check if this section contains "About"
+                        if (sectionText.toLowerCase().includes('about')) {
+                            console.log('[DOM] Found About section');
+                            
+                            // Get all spans in this section
+                            const spans = section.querySelectorAll('span[dir="auto"]');
+                            for (let span of spans) {
+                                const text = span.textContent?.trim();
+                                if (!text) continue;
+                                
+                                // Skip the "About" label itself
+                                if (text.toLowerCase() === 'about') continue;
+                                
+                                // This should be the about text
+                                if (text.length >= 3 && text.length <= 300) {
+                                    about = text;
+                                    console.log('[DOM] ✓ Found about:', about);
+                                    break;
+                                }
+                            }
+                            
+                            if (about) break;
+                        }
+                    }
+                    
+                    // Strategy 2: Alternative search if not found
+                    if (!about) {
+                        console.log('[DOM] About not found in sections, trying alternative...');
+                        const allSpans = drawer.querySelectorAll('span[dir="ltr"], span[dir="auto"]');
+                        for (let span of allSpans) {
+                            const text = span.textContent?.trim();
+                            if (!text) continue;
+                            
+                            // Look for text that seems like a bio (medium length, not a label)
+                            if (text.length >= 10 && text.length <= 300) {
+                                const lowerText = text.toLowerCase();
+                                // Skip common UI labels
+                                if (!lowerText.includes('media') && 
+                                    !lowerText.includes('starred') && 
+                                    !lowerText.includes('mute') && 
+                                    !lowerText.includes('notification') &&
+                                    !lowerText.includes('encryption') &&
+                                    !lowerText.includes('disappearing')) {
+                                    about = text;
+                                    console.log('[DOM] ✓ Found about (alt):', about);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    console.log('[DOM] Final results - Name:', name, '| About:', about);
+                    
+                    return {
+                        success: true,
+                        name: name,
+                        about: about
+                    };
+                }
+            """)
+            
+            if result.get('success'):
+                extracted_name = result.get('name')
+                extracted_about = result.get('about')
+                
+                if extracted_name:
+                    logger.info(f"[WhatsAppScraper] ✅ DOM extracted name: '{extracted_name}'")
+                else:
+                    logger.warning(f"[WhatsAppScraper] ⚠️ DOM could not extract name")
+                    
+                if extracted_about:
+                    logger.info(f"[WhatsAppScraper] ✅ DOM extracted about: '{extracted_about[:60]}...'")
+                else:
+                    logger.warning(f"[WhatsAppScraper] ⚠️ DOM could not extract about")
+                
+                return extracted_name, extracted_about
+            else:
+                logger.warning(f"[WhatsAppScraper] DOM extraction failed: {result.get('error')}")
+                return None, None
+                
+        except Exception as e:
+            logger.error(f"[WhatsAppScraper] DOM extraction error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None, None
+
+    def _extract_from_drawer_screenshot(self, screenshot_path: str, phone: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+        """
+        FALLBACK METHOD: Extract name, about, and profile picture from drawer screenshot using OCR.
+        Only used if DOM extraction fails.
+        
+        Args:
+            screenshot_path: Path to the drawer screenshot
+            phone: Phone number for saving profile pic
+            
+        Returns:
+            Tuple[name, about, profile_pic_path]: Extracted data from screenshot
+        """
+        logger.info(f"[WhatsAppScraper] 🔄 FALLBACK: Using OCR extraction from screenshot")
+        name = None
+        about = None
+        profile_pic_path = None
+        
+        try:
+            logger.info(f"[WhatsAppScraper] 🔍 OCR: Loading screenshot: {screenshot_path}")
+            
+            if not os.path.exists(screenshot_path):
+                logger.error(f"[WhatsAppScraper] ❌ Screenshot not found: {screenshot_path}")
+                return None, None, None
+            
+            # Load the screenshot
+            img = cv2.imread(screenshot_path)
+            if img is None:
+                logger.error(f"[WhatsAppScraper] ❌ Failed to load screenshot: {screenshot_path}")
+                return None, None, None
+            
+            height, width = img.shape[:2]
+            logger.info(f"[WhatsAppScraper] 📐 Screenshot size: {width}x{height}")
+            
+            # ============================================================================
+            # STEP 1: Extract Profile Picture (top center, circular area)
+            # ============================================================================
+            try:
+                logger.info(f"[WhatsAppScraper] 📸 Extracting profile picture from screenshot...")
+                # Profile picture is typically at top center of drawer
+                profile_top = 80
+                profile_height = 250
+                profile_left = int(width * 0.1)
+                profile_width = int(width * 0.8)
+                
+                profile_region = img[profile_top:profile_top+profile_height, profile_left:profile_left+profile_width]
+                
+                # Find circular contours
+                gray = cv2.cvtColor(profile_region, cv2.COLOR_BGR2GRAY)
+                blurred = cv2.GaussianBlur(gray, (9, 9), 2)
+                
+                circles = cv2.HoughCircles(
+                    blurred,
+                    cv2.HOUGH_GRADIENT,
+                    dp=1.2,
+                    minDist=100,
+                    param1=50,
+                    param2=30,
+                    minRadius=50,
+                    maxRadius=150
+                )
+                
+                if circles is not None:
+                    circles = np.uint16(np.around(circles))
+                    circle = circles[0][0]
+                    center_x, center_y, radius = circle
+                    
+                    crop_x = max(0, center_x - radius)
+                    crop_y = max(0, center_y - radius)
+                    crop_size = radius * 2
+                    
+                    profile_crop = profile_region[crop_y:crop_y+crop_size, crop_x:crop_x+crop_size]
+                    
+                    os.makedirs("uploads/whatsapp/profiles", exist_ok=True)
+                    profile_pic_path = f"uploads/whatsapp/profiles/{phone}.jpg"
+                    cv2.imwrite(profile_pic_path, profile_crop)
+                    logger.info(f"[WhatsAppScraper] ✅ Profile picture extracted: {profile_pic_path}")
+                else:
+                    logger.warning(f"[WhatsAppScraper] ⚠️ No circular profile picture detected, using region")
+                    os.makedirs("uploads/whatsapp/profiles", exist_ok=True)
+                    profile_pic_path = f"uploads/whatsapp/profiles/{phone}.jpg"
+                    cv2.imwrite(profile_pic_path, profile_region)
+                    logger.info(f"[WhatsAppScraper] ⚠️ Saved profile region as fallback")
+                    
+            except Exception as e:
+                logger.error(f"[WhatsAppScraper] ❌ Profile picture extraction failed: {e}")
+            
+            # ============================================================================
+            # STEP 2: Extract NAME and ABOUT using EasyOCR with detailed logging
+            # ============================================================================
+            try:
+                logger.info(f"[WhatsAppScraper] 🔤 Initializing EasyOCR reader...")
+                
+                # Initialize OCR reader (cached in instance)
+                if not hasattr(self, '_ocr_reader'):
+                    import easyocr
+                    self._ocr_reader = easyocr.Reader(['en'], gpu=False, verbose=False)
+                    logger.info(f"[WhatsAppScraper] ✓ EasyOCR reader initialized")
+                
+                # Extract ALL text from screenshot
+                logger.info(f"[WhatsAppScraper] 🔍 Running OCR on entire screenshot...")
+                results = self._ocr_reader.readtext(img, detail=1, paragraph=False)
+                
+                logger.info(f"[WhatsAppScraper] 📊 OCR found {len(results)} text elements")
+                
+                # Sort by Y coordinate (top to bottom)
+                results_sorted = sorted(results, key=lambda x: x[0][0][1])
+                
+                # Extract and log all text lines
+                text_lines = []
+                for idx, (bbox, text, confidence) in enumerate(results_sorted):
+                    text_clean = text.strip()
+                    y_position = bbox[0][1]
+                    x_position = bbox[0][0]
+                    
+                    if text_clean and len(text_clean) >= 2 and confidence > 0.2:
+                        text_lines.append({
+                            'text': text_clean,
+                            'y': y_position,
+                            'x': x_position,
+                            'confidence': confidence
+                        })
+                        logger.debug(f"[WhatsAppScraper] OCR[{idx}]: y={y_position:.0f}, x={x_position:.0f}, conf={confidence:.2f}, text='{text_clean}'")
+                
+                # ============================================================================
+                # Extract NAME: Usually in top 40% of drawer, not a phone number
+                # ============================================================================
+                logger.info(f"[WhatsAppScraper] 🔍 Searching for NAME in top section...")
+                name_candidates = []
+                for line in text_lines:
+                    y = line['y']
+                    text = line['text']
+                    conf = line['confidence']
+                    
+                    # Name is usually between y=200 and y=450
+                    if 200 <= y <= 450:
+                        text_lower = text.lower()
+                        
+                        # Skip common labels and phone numbers
+                        if (text_lower not in ['contact info', 'about', 'media', 'mute', 'starred', 'disappearing messages'] and
+                            not text.startswith('+') and
+                            not text.replace(' ', '').isdigit() and
+                            len(text) >= 3 and len(text) <= 50 and
+                            conf > 0.3):
+                            name_candidates.append(line)
+                            logger.info(f"[WhatsAppScraper] 👤 NAME candidate: '{text}' (y={y:.0f}, conf={conf:.2f})")
+                
+                if name_candidates:
+                    # Pick the first valid candidate
+                    name = name_candidates[0]['text']
+                    logger.info(f"[WhatsAppScraper] ✅ NAME extracted via OCR: '{name}'")
+                else:
+                    logger.warning(f"[WhatsAppScraper] ⚠️ No valid NAME found in OCR results")
+                
+                # ============================================================================
+                # Extract ABOUT: Usually after "About" label, in middle section
+                # ============================================================================
+                logger.info(f"[WhatsAppScraper] 🔍 Searching for ABOUT/BIO...")
+                about_candidates = []
+                found_about_label = False
+                about_label_y = None
+                
+                for line in text_lines:
+                    y = line['y']
+                    text = line['text']
+                    conf = line['confidence']
+                    text_lower = text.lower()
+                    
+                    # Look for "About" label first
+                    if 'about' in text_lower and y >= 350:
+                        found_about_label = True
+                        about_label_y = y
+                        logger.info(f"[WhatsAppScraper] 🏷️ Found 'About' label at y={y:.0f}")
+                        continue
+                    
+                    # After finding "About" label, next substantial text is the bio
+                    if found_about_label and y > about_label_y and len(text) >= 5:
+                        # Skip common non-bio texts
+                        if (text_lower not in ['media', 'mute', 'starred', 'disappearing messages', 'encryption', 'media, links and docs'] and
+                            not text.replace(' ', '').isdigit() and
+                            conf > 0.3):
+                            about_candidates.append(line)
+                            logger.info(f"[WhatsAppScraper] 💬 ABOUT candidate: '{text}' (y={y:.0f}, conf={conf:.2f})")
+                
+                if about_candidates:
+                    # Concatenate bio lines (some bios span multiple lines)
+                    about_parts = [c['text'] for c in about_candidates[:3]]
+                    about = ' '.join(about_parts)
+                    logger.info(f"[WhatsAppScraper] ✅ ABOUT extracted via OCR: '{about}'")
+                else:
+                    # Fallback: look in middle region
+                    logger.info(f"[WhatsAppScraper] 🔍 ABOUT not found after label, searching middle region...")
+                    for line in text_lines:
+                        if 450 <= line['y'] <= 700 and len(line['text']) >= 10:
+                            text_lower = line['text'].lower()
+                            if (text_lower not in ['media', 'mute', 'starred', 'encryption'] and
+                                not line['text'].replace(' ', '').isdigit()):
+                                about = line['text']
+                                logger.info(f"[WhatsAppScraper] ✅ ABOUT (fallback): '{about}'")
+                                break
+                
+                if not about:
+                    logger.warning(f"[WhatsAppScraper] ⚠️ No ABOUT text found in OCR results")
+                    
+            except Exception as e:
+                logger.error(f"[WhatsAppScraper] ❌ OCR text extraction failed: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+            
+            logger.info(f"[WhatsAppScraper] 📊 OCR Extraction Summary: name={'✓' if name else '✗'}, about={'✓' if about else '✗'}, photo={'✓' if profile_pic_path else '✗'}")
+            return name, about, profile_pic_path
+            
+        except Exception as e:
+            logger.error(f"[WhatsAppScraper] ❌ Screenshot extraction failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None, None, None
+    
+    async def _try_extract_profile_drawer(self, clean_number: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+        """
+        Open CONTACT's profile drawer (NOT our own profile) using ROBUST automation.
+        
+        CRITICAL: This opens the NEW CHAT's header to view the CONTACT's profile info.
+        We're already on web.whatsapp.com/send?phone=NUMBER which shows the contact's chat.
+        Clicking the header opens THEIR profile drawer with THEIR name, bio, and photo.
+        
+        Returns:
+            Tuple[name, about, profile_picture]: Contact's name, bio/about, and profile picture path
+        
+        Implements multiple fallback strategies for maximum reliability:
+        1. header[data-testid="conversation-header"] - Most stable selector
+        2. header[role="button"] span[dir="auto"] - Name-based click
+        3. header picture img[src*="whatsapp.net"] - Profile pic click
+        4. JavaScript click bypass - Handles overlays/animations
+        5. Generic header click - Last resort fallback
         """
         about = None
         photo_path = None
         
         try:
-            logger.info("[WhatsAppScraper] Opening profile drawer using robust selector chain for: %s", clean_number)
+            logger.info("[WhatsAppScraper] Opening CONTACT's profile drawer for number: %s", clean_number)
+            logger.info("[WhatsAppScraper] Current URL: %s", self.page.url if self.page else "No page")
             
             clicked = False
             
@@ -1092,9 +1566,18 @@ class WhatsAppScraper:
             try:
                 logger.info("[WhatsAppScraper] Strategy 1: Waiting for conversation-header data-testid...")
                 await self.page.wait_for_selector('header[data-testid="conversation-header"]', timeout=10000, state='visible')
-                await self.page.click('header[data-testid="conversation-header"]')
-                clicked = True
-                logger.info("[WhatsAppScraper] ✓✓ Strategy 1 SUCCESS: Clicked via data-testid")
+                
+                # CRITICAL: Verify this is the CHAT header, not sidebar
+                # Chat header is on the right side of the screen (x > 400)
+                header_box = await self.page.locator('header[data-testid="conversation-header"]').bounding_box()
+                if header_box and header_box['x'] > 400:
+                    logger.info(f"[WhatsAppScraper] ✓ Chat header confirmed (x={header_box['x']}, should be > 400)")
+                    await asyncio.sleep(1.0)  # Wait before clicking
+                    await self.page.click('header[data-testid="conversation-header"]')
+                    clicked = True
+                    logger.info("[WhatsAppScraper] ✓✓ Strategy 1 SUCCESS: Clicked via data-testid")
+                else:
+                    logger.warning(f"[WhatsAppScraper] Header found but position wrong (x={header_box['x'] if header_box else 'none'})")
             except Exception as e:
                 logger.debug(f"[WhatsAppScraper] Strategy 1 failed: {e}")
             
@@ -1146,18 +1629,35 @@ class WhatsAppScraper:
             if not clicked:
                 try:
                     logger.info("[WhatsAppScraper] Strategy 5: Advanced fallback - any header...")
+                    # First, take a debug screenshot to see what's on the page
+                    try:
+                        debug_ss = f"reports/whatsapp/before_strategy5_{clean_number}.png"
+                        await self.page.screenshot(path=debug_ss)
+                        logger.info(f"[WhatsAppScraper] Debug screenshot before Strategy 5: {debug_ss}")
+                    except Exception:
+                        pass
+                    
                     # Try clicking any header element that's visible and on the right side
                     headers = await self.page.query_selector_all('header')
-                    for header in headers:
+                    logger.info(f"[WhatsAppScraper] Found {len(headers)} header elements on page")
+                    
+                    for idx, header in enumerate(headers):
                         try:
                             box = await header.bounding_box()
-                            if box and box['x'] > 300:  # Right side of screen
-                                await header.click()
-                                clicked = True
-                                logger.info("[WhatsAppScraper] ✓✓ Strategy 5 SUCCESS: Clicked generic header")
-                                break
-                        except Exception:
+                            if box:
+                                logger.info(f"[WhatsAppScraper] Header {idx+1}: x={box['x']:.0f}, y={box['y']:.0f}, width={box['width']:.0f}, height={box['height']:.0f}")
+                                if box['x'] > 300:  # Right side of screen
+                                    await header.click()
+                                    clicked = True
+                                    logger.info(f"[WhatsAppScraper] ✓✓ Strategy 5 SUCCESS: Clicked header {idx+1} at x={box['x']:.0f}")
+                                    break
+                        except Exception as e:
+                            logger.debug(f"[WhatsAppScraper] Header {idx+1} click failed: {e}")
                             continue
+                    
+                    if not clicked:
+                        logger.warning(f"[WhatsAppScraper] No headers found on right side of screen (x > 300)")
+                        
                 except Exception as e:
                     logger.debug(f"[WhatsAppScraper] Strategy 5 failed: {e}")
             
@@ -1170,17 +1670,24 @@ class WhatsAppScraper:
                     logger.error(f"[WhatsAppScraper] Debug screenshot saved: {screenshot_path}")
                 except Exception:
                     pass
-                return about, photo_path
+                return None, None, None
             
-            # Wait for profile drawer to appear (using recommended selector)
-            await asyncio.sleep(2.5)
+            # CRITICAL: Wait for profile drawer to appear and be fully rendered
+            # WhatsApp takes 2-4 seconds to load all profile data
+            logger.info("[WhatsAppScraper] Waiting for profile drawer to fully load...")
+            await asyncio.sleep(5.0)  # Increased from 2.5 to 3.0 seconds
             
             drawer_found = False
             try:
                 # WhatsApp's profile drawer has aria-label="Contact info"
-                await self.page.wait_for_selector('div[aria-label="Contact info"], div[data-testid="drawer-right"]', timeout=10000, state='visible')
+                await self.page.wait_for_selector('div[aria-label="Contact info"], div[data-testid="drawer-right"]', timeout=15000, state='visible')
                 drawer_found = True
                 logger.info("[WhatsAppScraper] ✓✓✓ Profile drawer opened and verified!")
+                
+                # ADDITIONAL WAIT: Let profile image and data fully render
+                await asyncio.sleep(3.0)
+                logger.info("[WhatsAppScraper] Profile data fully loaded")
+                
             except Exception as e:
                 logger.warning(f"[WhatsAppScraper] Profile drawer verification failed: {e}")
                 # Try alternate verification
@@ -1206,193 +1713,239 @@ class WhatsAppScraper:
                 except Exception:
                     pass
             
-            # VERIFICATION: Check if we opened the correct profile (not our own!)
-            # Extract the phone number from the drawer to verify it matches what we're scraping
+            # ============================================================================
+            # CRITICAL VERIFICATION: Ensure we're viewing CONTACT's profile (not our own!)
+            # ============================================================================
+            # Since we navigated to web.whatsapp.com/send?phone=NUMBER, clicking the header
+            # SHOULD open the contact's profile. But we need to verify this actually happened.
             try:
+                logger.info(f"[WhatsAppScraper] 🔍 VERIFICATION: Checking if drawer shows CONTACT {clean_number} (not our own profile)...")
+                
                 phone_in_drawer = await self.page.evaluate(r"""
                     () => {
-                        // Look for phone number in the drawer
-                        const phoneElements = document.querySelectorAll('div[data-testid="drawer-right"] span, section span');
-                        for (const el of phoneElements) {
+                        // Strategy 1: Look for phone number in header/title area
+                        const titleElements = document.querySelectorAll('div[data-testid="drawer-right"] h2, div[data-testid="drawer-right"] [role="heading"]');
+                        for (const el of titleElements) {
                             const text = el.textContent || '';
-                            // Match phone number patterns
-                            if (text.match(/[+\d\s()-]{8,}/)) {
+                            console.log('Checking title:', text);
+                            // Match phone patterns like "+91 89761 86404"
+                            if (text.match(/[+\d\s()-]{10,}/)) {
                                 return text.trim();
                             }
                         }
+                        
+                        // Strategy 2: Look in all spans/divs in drawer
+                        const allElements = document.querySelectorAll('div[data-testid="drawer-right"] span, div[data-testid="drawer-right"] div');
+                        for (const el of allElements) {
+                            const text = el.textContent || '';
+                            // Only match if it looks like a phone number (starts with + or has many digits)
+                            if (text.match(/^\+\d{1,3}\s?\d{4,5}\s?\d{4,6}$/) || text.match(/^\d{10,}$/)) {
+                                console.log('Found phone in drawer:', text);
+                                return text.trim();
+                            }
+                        }
+                        
+                        // Strategy 3: Check section headers
+                        const sections = document.querySelectorAll('section span');
+                        for (const el of sections) {
+                            const text = el.textContent || '';
+                            if (text.match(/[+\d\s()-]{10,}/) && !text.includes('@')) {
+                                console.log('Found phone in section:', text);
+                                return text.trim();
+                            }
+                        }
+                        
+                        console.log('No phone found in drawer');
                         return null;
                     }
                 """)
+                
+                verification_passed = False
+                
                 if phone_in_drawer:
-                    logger.info(f"[WhatsAppScraper] 📞 Phone in drawer: {phone_in_drawer} (Expected: {clean_number})")
-                    # Basic validation - check if the number matches (ignoring formatting)
+                    logger.info(f"[WhatsAppScraper] 📞 Phone found in drawer: '{phone_in_drawer}' | Expected: '{clean_number}'")
+                    
+                    # Extract digits only for comparison (ignores country codes, formatting)
                     clean_drawer = "".join([c for c in str(phone_in_drawer) if c.isdigit()])
-                    if clean_drawer and clean_number not in clean_drawer and clean_drawer not in clean_number:
-                        logger.error(f"[WhatsAppScraper] ❌❌ WRONG PROFILE! Drawer shows {phone_in_drawer} but expected {clean_number}")
-                        logger.error("[WhatsAppScraper] This might be YOUR profile instead of the contact's!")
-                else:
-                    logger.warning("[WhatsAppScraper] Could not find phone number in drawer for verification")
-            except Exception as e:
-                logger.warning(f"[WhatsAppScraper] Phone verification failed: {e}")
-            
-            # Extract profile name (from drawer)
-            name = None
-            name_selectors = [
-                'div[data-testid="drawer-right"] h2',
-                'div[data-testid="drawer-right"] span[dir="auto"][title]',
-                'section h2 span',
-                'div[data-testid="contact-info-drawer"] h2',
-            ]
-            for sel in name_selectors:
-                try:
-                    el = await self.page.query_selector(sel)
-                    if el:
-                        # Try title attribute first (most reliable)
-                        name = await el.get_attribute("title")
-                        if not name:
-                            name = await el.text_content()
-                        if name and name.strip() and len(name.strip()) > 0:
-                            logger.info(f"[WhatsAppScraper] ✓✓ Found CONTACT name: '{name.strip()}'")
-                            break
-                except Exception:
-                    continue
-            
-            # Extract about/bio/status
-            about_selectors = [
-                'div[data-testid="about-drawer"] span[dir="auto"]',
-                'span[data-testid="status-v3-text"]',
-                'div.about-section span[dir="auto"]',
-                'section div[title]',  # Sometimes about is in title attribute
-            ]
-            for sel in about_selectors:
-                try:
-                    el = await self.page.query_selector(sel)
-                    if el:
-                        # Try text content first
-                        text = await el.text_content()
-                        if not text or not text.strip():
-                            # Try title attribute
-                            text = await el.get_attribute("title")
-                        if text and text.strip() and text.strip().lower() not in ['', 'about', 'bio']:
-                            about = text.strip()
-                            logger.info(f"[WhatsAppScraper] ✓ Found about/bio: {about[:50]}...")
-                            break
-                except Exception as e:
-                    logger.debug(f"[WhatsAppScraper] About selector {sel} failed: {e}")
-                    continue
-            
-            # Extract profile photo - UPDATED to match your HTML structure
-            # From your HTML: <img alt="" draggable="false" class="x1n2onr6 x1lliihq..." src="https://media-del2-2.cdn.whatsapp.net/v/t61.24694-24/...">
-            img_selectors = [
-                # High resolution profile photo from drawer
-                'div[data-testid="drawer-right"] img[src*="whatsapp.net"]',
-                'div[data-testid="contact-info-drawer"] img[src*="whatsapp.net"]',
-                # Profile image with specific classes (from your HTML)
-                'img.x1n2onr6.x1lliihq.xh8yej3[src*="whatsapp.net"]',
-                'img[alt=""][src*="whatsapp.net"]',
-                # Generic fallbacks
-                'img[alt="Profile picture"]',
-                'img[data-testid="profile-picture"]',
-                'div[data-testid="image-view"] img',
-                'section img[src*="cdn.whatsapp"]',
-            ]
-            
-            for sel in img_selectors:
-                try:
-                    el = await self.page.query_selector(sel)
-                    if el:
-                        src = await el.get_attribute("src")
-                        logger.info(f"[WhatsAppScraper] Found image with selector {sel}: {src[:100] if src else 'None'}...")
+                    
+                    # More lenient matching - just check if last 10 digits match
+                    # This handles cases like "+91 89761 86404" vs "918976186404"
+                    drawer_last_10 = clean_drawer[-10:] if len(clean_drawer) >= 10 else clean_drawer
+                    target_last_10 = clean_number[-10:] if len(clean_number) >= 10 else clean_number
+                    
+                    is_match = (drawer_last_10 == target_last_10) or (clean_number in clean_drawer) or (clean_drawer in clean_number)
+                    
+                    logger.info(f"[WhatsAppScraper] Comparing: drawer='{clean_drawer}' (last10={drawer_last_10}) vs target='{clean_number}' (last10={target_last_10})")
+                    
+                    if is_match:
+                        logger.info(f"[WhatsAppScraper] ✅✅ VERIFICATION PASSED: Viewing CONTACT {clean_number}")
+                        verification_passed = True
+                    else:
+                        logger.error(f"[WhatsAppScraper] ❌❌ VERIFICATION FAILED!")
+                        logger.error(f"[WhatsAppScraper] Expected contact: {clean_number}")
+                        logger.error(f"[WhatsAppScraper] Drawer shows: {phone_in_drawer} (cleaned: {clean_drawer})")
+                        logger.error(f"[WhatsAppScraper] ⚠️ This is YOUR OWN profile or WRONG contact!")
+                        logger.error(f"[WhatsAppScraper] STOPPING extraction to prevent incorrect data")
                         
-                        if src and "default-user" not in src.lower() and "blank" not in src.lower():
-                            # Check if it's a real WhatsApp CDN image
-                            if "whatsapp.net" in src or "cdn" in src:
-                                logger.info(f"[WhatsAppScraper] ✓ Found WhatsApp CDN profile photo")
-                                photo_path = await self._download_image(src, clean_number)
-                                if photo_path:
-                                    logger.info(f"[WhatsAppScraper] ✓✓ Saved profile photo: {photo_path}")
-                                    break
-                            # Handle base64 images
-                            elif src.startswith("data:image"):
-                                try:
-                                    b64 = src.split(",", 1)[1]
-                                    data = base64.b64decode(b64)
-                                    photo_path = self._save_binary_profile_picture(data, clean_number)
-                                    logger.info(f"[WhatsAppScraper] ✓ Saved base64 profile photo: {photo_path}")
-                                    break
-                                except Exception as e:
-                                    logger.warning(f"[WhatsAppScraper] Base64 decode failed: {e}")
-                            # Handle blob URLs
-                            elif src.startswith("blob:"):
-                                logger.warning("[WhatsAppScraper] Blob URL detected, trying screenshot method")
-                                # For blob URLs, we need to screenshot the image element
-                                try:
-                                    downloads = Path("uploads") / "whatsapp" / "profiles"
-                                    downloads.mkdir(parents=True, exist_ok=True)
-                                    filename = f"{clean_number}.jpg"
-                                    path = downloads / filename
-                                    await el.screenshot(path=str(path))
-                                    photo_path = str(path.resolve())
-                                    logger.info(f"[WhatsAppScraper] ✓ Screenshot saved: {photo_path}")
-                                    break
-                                except Exception as e:
-                                    logger.warning(f"[WhatsAppScraper] Screenshot failed: {e}")
-                except Exception as e:
-                    logger.debug(f"[WhatsAppScraper] Image selector {sel} failed: {e}")
-                    continue
-            
-            # Additional: Try JavaScript extraction for profile image if selectors failed
-            if not photo_path:
-                logger.info("[WhatsAppScraper] Trying JS extraction for profile image...")
-                try:
-                    js_img_src = await self.page.evaluate("""
-                        () => {
-                            // Find any image with WhatsApp CDN URL
-                            const imgs = document.querySelectorAll('img');
-                            for (const img of imgs) {
-                                if (img.src && img.src.includes('whatsapp.net')) {
-                                    return img.src;
-                                }
-                            }
-                            return null;
-                        }
-                    """)
-                    if js_img_src:
-                        logger.info(f"[WhatsAppScraper] JS found image: {js_img_src[:100]}...")
-                        photo_path = await self._download_image(js_img_src, clean_number)
-                        if photo_path:
-                            logger.info(f"[WhatsAppScraper] ✓ JS extraction saved photo: {photo_path}")
-                except Exception as e:
-                    logger.warning(f"[WhatsAppScraper] JS image extraction failed: {e}")
-            
-            # Close drawer by pressing ESC or clicking close button
-            try:
-                # Try ESC key first (most reliable)
-                await self.page.keyboard.press("Escape")
-                await asyncio.sleep(0.8)
-                logger.info("[WhatsAppScraper] Closed drawer with ESC key")
-            except Exception:
-                # Fallback to click close button
-                close_selectors = [
-                    'button[aria-label="Close"]',
-                    'span[data-testid="x-viewer"]',
-                    'div[data-testid="drawer-right"] button',
-                ]
-                for sel in close_selectors:
+                        # Take debug screenshot
+                        try:
+                            await self.page.screenshot(path=f"reports/wrong_profile_{clean_number}.png")
+                            logger.error(f"[WhatsAppScraper] Debug screenshot: reports/wrong_profile_{clean_number}.png")
+                        except:
+                            pass
+                        
+                        # CRITICAL: Return immediately without extracting data
+                        return None, None, None
+                else:
+                    logger.warning(f"[WhatsAppScraper] ⚠️ Could not find phone number in drawer for verification")
+                    logger.warning(f"[WhatsAppScraper] This likely means we're viewing YOUR profile instead of the contact's")
+                    logger.warning(f"[WhatsAppScraper] STOPPING extraction to prevent incorrect data")
+                    
+                    # Take screenshot for debugging
                     try:
-                        el = await self.page.query_selector(sel)
-                        if el:
-                            await el.click()
-                            await asyncio.sleep(0.5)
-                            logger.info(f"[WhatsAppScraper] Closed drawer with {sel}")
-                            break
-                    except Exception:
-                        continue
+                        await self.page.screenshot(path=f"reports/no_phone_in_drawer_{clean_number}.png")
+                        logger.warning(f"[WhatsAppScraper] Debug screenshot: reports/no_phone_in_drawer_{clean_number}.png")
+                    except:
+                        pass
+                    
+                    # CRITICAL: Return immediately without extracting data
+                    return None, None, None
+                    
+            except Exception as e:
+                logger.warning(f"[WhatsAppScraper] Phone verification failed with error: {e}")
+                logger.warning(f"[WhatsAppScraper] Cannot confirm profile ownership - STOPPING extraction")
+                return None, None, None
+            
+            # ============================================================================
+            # ONLY PROCEED WITH EXTRACTION IF VERIFICATION PASSED
+            # ============================================================================
+            if not verification_passed:
+                logger.error(f"[WhatsAppScraper] ❌ Verification did not pass - aborting extraction")
+                return None, None, None
+            
+            logger.info(f"[WhatsAppScraper] ✅ Verification passed - proceeding with data extraction from CONTACT's drawer")
+            
+            # DEBUG: Capture screenshot of opened drawer
+            screenshot_path = None
+            try:
+                screenshot_path = f"reports/whatsapp/drawer_opened_{clean_number}.png"
+                await self.page.screenshot(path=screenshot_path, full_page=True)
+                logger.info(f"[WhatsAppScraper] 📸 Screenshot saved: {screenshot_path}")
+            except Exception as e:
+                logger.error(f"[WhatsAppScraper] Screenshot failed: {e}")
+            
+            # ============================================================================
+            # PRIMARY METHOD: Extract data using DOM (JavaScript) - MOST RELIABLE
+            # ============================================================================
+            name = None
+            about = None
+            photo_path = None
+            
+            logger.info(f"[WhatsAppScraper] 🎯 PRIMARY: Attempting DOM extraction...")
+            extracted_name, extracted_about = await self._extract_name_about_from_drawer_dom(clean_number)
+            
+            if extracted_name:
+                name = extracted_name
+                logger.info(f"[WhatsAppScraper] ✅ DOM extracted name: '{name}'")
+            
+            if extracted_about:
+                about = extracted_about
+                logger.info(f"[WhatsAppScraper] ✅ DOM extracted about: '{about[:60]}...'")
+            
+            # ============================================================================
+            # FALLBACK METHOD: Use OCR from screenshot if DOM extraction failed
+            # ============================================================================
+            if (not name or not about) and screenshot_path and os.path.exists(screenshot_path):
+                logger.info(f"[WhatsAppScraper] 🔄 FALLBACK: DOM incomplete, trying OCR extraction...")
+                ocr_name, ocr_about, ocr_photo = self._extract_from_drawer_screenshot(screenshot_path, clean_number)
+                
+                if not name and ocr_name:
+                    name = ocr_name
+                    logger.info(f"[WhatsAppScraper] ✅ OCR extracted name: '{name}'")
+                
+                if not about and ocr_about:
+                    about = ocr_about
+                    logger.info(f"[WhatsAppScraper] ✅ OCR extracted about: '{about[:60]}...'")
+                
+                if not photo_path and ocr_photo:
+                    photo_path = ocr_photo
+                    logger.info(f"[WhatsAppScraper] ✅ OCR extracted profile pic: '{photo_path}'")
+            
+            # ============================================================================
+            # Extract Profile Picture using existing methods
+            # ============================================================================
+            if not photo_path:
+                logger.info(f"[WhatsAppScraper] 🖼️ Extracting profile picture from drawer...")
+                photo_path = await self._extract_profile_picture(clean_number)
+            
+            # ============================================================================
+            # FINAL LOGGING
+            # ============================================================================
+            logger.info(f"[WhatsAppScraper] 📊 FINAL EXTRACTION RESULTS:")
+            logger.info(f"[WhatsAppScraper]   Name: {'✓ ' + name if name else '✗ Not found'}")
+            logger.info(f"[WhatsAppScraper]   About: {'✓ ' + about[:50] + '...' if about else '✗ Not found'}")
+            logger.info(f"[WhatsAppScraper]   Photo: {'✓ ' + photo_path if photo_path else '✗ Not found'}")
+            
+            return name, about, photo_path
         
         except Exception as e:
-            logger.error(f"[WhatsAppScraper] Profile drawer extraction error: {e}", exc_info=True)
+            logger.error(f"[WhatsAppScraper] Profile drawer extraction failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None, None, None
+    
+    async def _extract_profile_picture(self, clean_number: str) -> Optional[str]:
+        """
+        Extract profile picture from the opened drawer.
         
-        return about, photo_path
+        Args:
+            clean_number: Phone number for saving the profile picture
+            
+        Returns:
+            Path to saved profile picture or None
+        """
+        try:
+            logger.info(f"[WhatsAppScraper] 🖼️ Extracting profile picture for {clean_number}")
+            
+            # Use JavaScript to find the profile picture URL in the drawer
+            profile_pic_url = await self.page.evaluate("""
+                () => {
+                    const drawer = document.querySelector('div[data-testid="drawer-right"]');
+                    if (!drawer) return null;
+                    
+                    // Find images in drawer
+                    const images = drawer.querySelectorAll('img');
+                    for (let img of images) {
+                        const src = img.src || '';
+                        // Look for WhatsApp profile picture URLs
+                        if (src.includes('pps.whatsapp.net') || src.includes('mmg.whatsapp.net') || 
+                            src.startsWith('blob:') || src.startsWith('data:image')) {
+                            // Skip small icons
+                            const width = img.naturalWidth || img.width || 0;
+                            if (width >= 50) {
+                                return src;
+                            }
+                        }
+                    }
+                    return null;
+                }
+            """)
+            
+            if profile_pic_url:
+                logger.info(f"[WhatsAppScraper] Found profile picture URL: {profile_pic_url[:80]}...")
+                # Download and save the profile picture
+                saved_path = await self._download_image(profile_pic_url, clean_number)
+                if saved_path:
+                    logger.info(f"[WhatsAppScraper] ✅ Profile picture saved: {saved_path}")
+                    return saved_path
+            else:
+                logger.warning(f"[WhatsAppScraper] ⚠️ No profile picture URL found")
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"[WhatsAppScraper] Profile picture extraction failed: {e}")
+            return None
 
     async def close(self):
         """Close browser and save session state."""

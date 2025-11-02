@@ -203,9 +203,15 @@ class UsernameSearch(Base):
     __tablename__ = "username_searches"
 
     id = Column(Integer, primary_key=True, index=True)
-    case_id = Column(Integer, ForeignKey("cases.id"))
+    case_id = Column(Integer, ForeignKey("cases.id"), nullable=True)
     username = Column(String(100), nullable=False, index=True)
+    officer_name = Column(String(100), nullable=True)
+    cache_key = Column(String(200), nullable=True, index=True)
+    status = Column(String(20), default="pending")  # pending, in_progress, completed, failed
+    platforms_checked = Column(Integer, default=0)
+    platforms_found = Column(Integer, default=0)
     searched_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
 
     # Relationships
     case = relationship("Case", back_populates="username_searches")
@@ -217,10 +223,11 @@ class UsernameResult(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     search_id = Column(Integer, ForeignKey("username_searches.id"))
-    platform = Column(String(100), nullable=False)
-    profile_url = Column(String(1000), nullable=True)
-    is_available = Column(Boolean, default=False)
-    registered_date = Column(DateTime, nullable=True)
+    platform_name = Column(String(100), nullable=False)
+    platform_url = Column(String(1000), nullable=True)
+    username_found = Column(Boolean, default=False)
+    confidence_score = Column(Float, default=0.0)
+    discovered_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
     search = relationship("UsernameSearch", back_populates="results")
@@ -231,14 +238,18 @@ class NumberEmailSearch(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     case_id = Column(Integer, ForeignKey("cases.id"))
+    user_id = Column(Integer, ForeignKey("users.id"))
     search_type = Column(String(20), nullable=False)  # phone, email
     search_value = Column(String(200), nullable=False, index=True)
     searched_at = Column(DateTime, default=datetime.utcnow)
     credits_used = Column(Integer, default=0)
-
+    status = Column(String(20), default="pending")  # pending, completed, failed
+    modules_requested = Column(String(500), nullable=True)  # Comma-separated module names
+    
     # Relationships
     case = relationship("Case", back_populates="number_email_searches")
     results = relationship("NumberEmailResult", back_populates="search")
+    user = relationship("User")
 
 
 class NumberEmailResult(Base):
@@ -246,11 +257,13 @@ class NumberEmailResult(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     search_id = Column(Integer, ForeignKey("number_email_searches.id"))
+    module_name = Column(String(100), nullable=False)  # truename, social_media, upi, vehicle, aadhaar, deep_search, linked_emails, alternate_numbers, bank_details
     result_type = Column(String(50), nullable=False)  # name, upi, aadhaar, vehicle, etc.
     result_data = Column(Text, nullable=True)  # JSON data
-    source = Column(String(100), nullable=True)
+    source = Column(String(100), nullable=True)  # Bot name (e.g., @YouLeakOsint_bot)
     confidence = Column(String(20), default="medium")  # low, medium, high
-
+    retrieved_at = Column(DateTime, default=datetime.utcnow)
+    
     # Relationships
     search = relationship("NumberEmailSearch", back_populates="results")
 
@@ -262,3 +275,23 @@ class SystemConfig(Base):
     key = Column(String(100), unique=True, nullable=False)
     value = Column(Text, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CreditTransaction(Base):
+    __tablename__ = "credit_transactions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    transaction_type = Column(String(20), nullable=False)  # debit, credit
+    amount = Column(Integer, nullable=False)
+    balance_before = Column(Integer, nullable=False)
+    balance_after = Column(Integer, nullable=False)
+    module = Column(String(50), nullable=True)  # tracker, etc.
+    reference_id = Column(Integer, nullable=True)  # Search ID
+    description = Column(String(500), nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # Admin who credited
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    user = relationship("User", foreign_keys=[user_id])
+    admin_user = relationship("User", foreign_keys=[created_by])

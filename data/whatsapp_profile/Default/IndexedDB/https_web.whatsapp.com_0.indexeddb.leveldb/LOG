@@ -1,0 +1,29 @@
+2025/11/02-15:53:47.327 36c0 Reusing MANIFEST D:\osint\data\whatsapp_profile\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-024900
+2025/11/02-15:53:47.329 36c0 Recovering log #25917
+2025/11/02-15:53:49.495 36c0 Reusing old log D:\osint\data\whatsapp_profile\Default\IndexedDB\https_web.whatsapp.com_0.indexeddb.leveldb/025917.log 
+2025/11/02-15:53:49.500 36c0 Delete type=2 #25913
+2025/11/02-15:53:49.501 36c0 Delete type=2 #25914
+2025/11/02-15:53:49.501 36c0 Delete type=2 #25915
+2025/11/02-15:53:49.502 36c0 Delete type=2 #25916
+2025/11/02-15:53:49.502 36c0 Delete type=2 #25919
+2025/11/02-15:54:13.449 2860 Level-0 table #25921: started
+2025/11/02-15:54:14.816 2860 Level-0 table #25921: 366172 bytes OK
+2025/11/02-15:54:15.372 2860 Delete type=0 #25917
+2025/11/02-15:54:15.714 2860 Manual compaction at level-0 from ' >\x03\x00\x00\x00' @ 72057594037927935 : 1 .. ' ?\x03\x00\x00\x00' @ 0 : 0; will stop at ' >\x03\x00\x00\x05' @ 67972287 : 1
+2025/11/02-15:54:15.715 2860 Compacting 1@0 + 3@1 files
+2025/11/02-15:54:18.185 2860 Generated table #25922@0: 18524 keys, 734470 bytes
+2025/11/02-15:54:18.825 2860 Generated table #25923@0: 2280 keys, 44559 bytes
+2025/11/02-15:54:19.736 2860 Generated table #25924@0: 657 keys, 38873 bytes
+2025/11/02-15:54:19.736 2860 Compacted 1@0 + 3@1 files => 817902 bytes
+2025/11/02-15:54:19.941 2860 compacted to: files[ 0 3 36 69 0 0 0 ]
+2025/11/02-15:54:19.945 2860 Delete type=2 #25921
+2025/11/02-15:54:19.946 36c0 Manual compaction at level-0 from ' >\x03\x00\x00\x05' @ 67972287 : 1 .. ' ?\x03\x00\x00\x00' @ 0 : 0; will stop at (end)
+2025/11/02-15:54:21.904 3c4c Compacting 1@1 + 9@2 files
+2025/11/02-15:54:23.732 3c4c Generated table #25925@1: 43964 keys, 593113 bytes
+2025/11/02-15:54:25.493 3c4c Generated table #25926@1: 1735 keys, 124323 bytes
+2025/11/02-15:54:27.160 3c4c Generated table #25927@1: 61 keys, 138947 bytes
+2025/11/02-15:54:28.277 3c4c Generated table #25928@1: 557 keys, 420308 bytes
+2025/11/02-15:54:32.183 3c4c Generated table #25929@1: 2547 keys, 2127934 bytes
+2025/11/02-15:54:39.397 3c4c Generated table #25930@1: 30719 keys, 2185017 bytes
+2025/11/02-15:54:42.182 3c4c Generated table #25931@1: 47175 keys, 2228776 bytes
+2025/11/02-15:54:42.182 3c4c compacted to: files[ 0 3 36 69 0 0 0 ]
