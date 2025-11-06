@@ -12,7 +12,7 @@ from modules.whatsapp_scraper import WhatsAppScraper
 
 async def test_single_number():
     """Test extraction for a single number"""
-    test_number = "+919582520423"  # KARAN BANSAL
+    test_number = "+918707798544"
     
     print(f"Testing extraction for: {test_number}")
     print("="*60)
@@ -38,6 +38,12 @@ async def test_single_number():
         print(f"Profile Pic: {result.get('profile_picture')}")
         print(f"Available: {result.get('is_available')}")
         print("="*60)
+        
+        # Check if drawer screenshot was saved
+        screenshot_path = f"reports/whatsapp/drawer_opened_918707798544.png"
+        if Path(screenshot_path).exists():
+            print(f"\n✓ Drawer screenshot saved: {screenshot_path}")
+            print("  Please verify it shows ONLY the right-side drawer")
         
     except Exception as e:
         print(f"Error: {e}")
