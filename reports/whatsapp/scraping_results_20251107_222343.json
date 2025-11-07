@@ -1,0 +1,74 @@
+[
+  {
+    "phone_number": "916397675890",
+    "display_name": null,
+    "about": null,
+    "profile_picture": "uploads/whatsapp/profiles/916397675890.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-07T16:31:03.612773"
+  },
+  {
+    "phone_number": "918707798544",
+    "display_name": null,
+    "about": null,
+    "profile_picture": "uploads/whatsapp/profiles/918707798544.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-07T16:36:47.606531"
+  },
+  {
+    "phone_number": "917415337302",
+    "display_name": null,
+    "about": null,
+    "profile_picture": "uploads/whatsapp/profiles/917415337302.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-07T16:40:11.982612"
+  },
+  {
+    "phone_number": "916385390568",
+    "display_name": null,
+    "about": null,
+    "profile_picture": "uploads/whatsapp/profiles/916385390568.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-07T16:43:36.059517"
+  },
+  {
+    "phone_number": "919582520423",
+    "display_name": null,
+    "about": null,
+    "profile_picture": "uploads/whatsapp/profiles/919582520423.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-07T16:46:59.897630"
+  },
+  {
+    "phone_number": "918929942819",
+    "display_name": null,
+    "about": null,
+    "profile_picture": "uploads/whatsapp/profiles/918929942819.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-07T16:50:24.572212"
+  }
+]

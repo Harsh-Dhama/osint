@@ -1,0 +1,15 @@
+[
+  {
+    "phone_number": "916397675890",
+    "display_name": null,
+    "about": null,
+    "profile_picture": "uploads/whatsapp/profiles/916397675890.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-07T17:51:51.392936",
+    "input_name": "Test Contact 1"
+  }
+]
