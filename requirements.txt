@@ -45,7 +45,7 @@ wordcloud==1.9.3
 
 # Data Processing
 pandas==2.2.2
-numpy==2.0.2
+numpy<2.0.0,>=1.24.0
 openpyxl==3.1.2
 xlsxwriter==3.2.0
 

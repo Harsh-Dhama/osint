@@ -1,0 +1,28 @@
+[
+  {
+    "phone_number": "916397675890",
+    "display_name": "+91 63976 75890",
+    "about": null,
+    "profile_picture": null,
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate_js_fallback",
+    "extraction_timestamp": "2025-11-08T10:50:47.503207",
+    "input_name": "Test Contact 1"
+  },
+  {
+    "phone_number": "918788878205",
+    "display_name": "Harshal Thoke",
+    "about": null,
+    "profile_picture": null,
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate_js_fallback",
+    "extraction_timestamp": "2025-11-08T10:53:31.368118",
+    "input_name": "Test Contact 2"
+  }
+]

@@ -1,0 +1,28 @@
+[
+  {
+    "phone_number": "916397675890",
+    "display_name": null,
+    "about": "Rather than love; than money; than fame; than faith; than fairness, give me truth:",
+    "profile_picture": "uploads/whatsapp/profiles/916397675890.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-08T11:49:21.656395",
+    "input_name": "Test Contact 1"
+  },
+  {
+    "phone_number": "918788878205",
+    "display_name": "Harshal Thoke",
+    "about": "Busy",
+    "profile_picture": "uploads/whatsapp/profiles/918788878205.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-08T11:52:56.316536",
+    "input_name": "Test Contact 2"
+  }
+]
