@@ -1,0 +1,80 @@
+[
+  {
+    "phone_number": "916397675890",
+    "display_name": "Adc",
+    "about": "Rather than love than money than fame than faith than fairness give me\ntruth.",
+    "profile_picture": "uploads/whatsapp/profiles/916397675890.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-10T13:25:18.411704",
+    "input_name": "Test Contact 1"
+  },
+  {
+    "phone_number": "918707798544",
+    "display_name": "Adc",
+    "about": "Nlever believe\nprediction that doesn t empower yOU",
+    "profile_picture": "uploads/whatsapp/profiles/918707798544.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-10T13:29:37.803798",
+    "input_name": "Test Contact 2"
+  },
+  {
+    "phone_number": "917415337302",
+    "display_name": null,
+    "about": "आग लगाना मेरी फिदरत में नहीं है\nमेरी सादगी से लोग जलते हैं तो मेरा क्या कसूर\nMonday\nClosed",
+    "profile_picture": "uploads/whatsapp/profiles/917415337302.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-10T13:33:23.234260",
+    "input_name": "Test Contact 3"
+  },
+  {
+    "phone_number": "916385390568",
+    "display_name": null,
+    "about": "Facilitating better business outcome\nMonday\nClosed\nhttps:/ /metafields xyz",
+    "profile_picture": "uploads/whatsapp/profiles/916385390568.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-10T13:37:09.727189",
+    "input_name": "Test Contact 4"
+  },
+  {
+    "phone_number": "919582520423",
+    "display_name": "Adc",
+    "about": "Keep calm n just chill",
+    "profile_picture": "uploads/whatsapp/profiles/919582520423.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-10T13:40:54.371044",
+    "input_name": "Test Contact 5"
+  },
+  {
+    "phone_number": "918929942819",
+    "display_name": "Adc",
+    "about": "Hey therel\nam using WlhatsApp",
+    "profile_picture": "uploads/whatsapp/profiles/918929942819.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-10T13:44:37.936937",
+    "input_name": "Test Contact 6"
+  }
+]

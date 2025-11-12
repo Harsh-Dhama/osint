@@ -1,0 +1,15 @@
+[
+  {
+    "phone_number": "918929942819",
+    "display_name": "+91 89299 42819",
+    "about": null,
+    "profile_picture": null,
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate_js_fallback",
+    "extraction_timestamp": "2025-11-10T04:55:20.717515",
+    "input_name": "Test Contact 6"
+  }
+]

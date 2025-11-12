@@ -1318,52 +1318,44 @@ class WhatsAppScraper:
             logger.error(traceback.format_exc())
             return None, None
 
+
     def _extract_from_drawer_screenshot(self, screenshot_path: str, phone: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
         """
         FALLBACK METHOD: Extract name, about, and profile picture from drawer screenshot using OCR.
         Only used if DOM extraction fails.
-        
+
         Args:
             screenshot_path: Path to the drawer screenshot
             phone: Phone number for saving profile pic
-            
+
         Returns:
             Tuple[name, about, profile_pic_path]: Extracted data from screenshot
         """
-        logger.info(f"[WhatsAppScraper] 🔄 FALLBACK: Using OCR extraction from screenshot")
-        name = None
-        about = None
-        profile_pic_path = None
-        
+        logger.info("[WhatsAppScraper] 🔄 FALLBACK: Using OCR extraction from screenshot")
+        name, about, profile_pic_path = "", "", None
+
         try:
-            logger.info(f"[WhatsAppScraper] 🔍 OCR: Loading screenshot: {screenshot_path}")
-            
             if not os.path.exists(screenshot_path):
-                logger.error(f"[WhatsAppScraper] ❌ Screenshot not found: {screenshot_path}")
+                logger.error("[WhatsAppScraper] ❌ Screenshot not found: %s", screenshot_path)
                 return None, None, None
-            
+
             img = cv2.imread(screenshot_path)
             if img is None:
-                logger.error(f"[WhatsAppScraper] ❌ Failed to load screenshot: {screenshot_path}")
+                logger.error("[WhatsAppScraper] ❌ Failed to load screenshot: %s", screenshot_path)
                 return None, None, None
-            
+
             height, width = img.shape[:2]
             logger.info(f"[WhatsAppScraper] 📐 Screenshot size: {width}x{height}")
 
+            # STEP 1: Profile picture extraction
             try:
-                logger.info(f"[WhatsAppScraper] 📸 Extracting profile picture from screenshot...")
-                # Profile picture is typically at top center of drawer
                 profile_top = 80
                 profile_height = 250
                 profile_left = int(width * 0.1)
                 profile_width = int(width * 0.8)
-                
                 profile_region = img[profile_top:profile_top+profile_height, profile_left:profile_left+profile_width]
-                
-                # Find circular contours
                 gray = cv2.cvtColor(profile_region, cv2.COLOR_BGR2GRAY)
                 blurred = cv2.GaussianBlur(gray, (9, 9), 2)
-                
                 circles = cv2.HoughCircles(
                     blurred,
                     cv2.HOUGH_GRADIENT,
@@ -1374,108 +1366,114 @@ class WhatsAppScraper:
                     minRadius=50,
                     maxRadius=150
                 )
-                
+                default_avatar = False
                 if circles is not None:
                     circles = np.uint16(np.around(circles))
                     circle = circles[0][0]
                     center_x, center_y, radius = circle
-                    
                     crop_x = max(0, center_x - radius)
                     crop_y = max(0, center_y - radius)
                     crop_size = radius * 2
-                    
                     profile_crop = profile_region[crop_y:crop_y+crop_size, crop_x:crop_x+crop_size]
-                    
-                    os.makedirs("uploads/whatsapp/profiles", exist_ok=True)
-                    profile_pic_path = f"uploads/whatsapp/profiles/{phone}.jpg"
-                    cv2.imwrite(profile_pic_path, profile_crop)
-                    logger.info(f"[WhatsAppScraper] ✅ Profile picture extracted: {profile_pic_path}")
+                    if profile_crop.std() < 5:
+                        default_avatar = True
+                    else:
+                        os.makedirs("uploads/whatsapp/profiles", exist_ok=True)
+                        profile_pic_path = f"uploads/whatsapp/profiles/{phone}.jpg"
+                        cv2.imwrite(profile_pic_path, profile_crop)
                 else:
-                    logger.warning(f"[WhatsAppScraper] ⚠️ No circular profile picture detected, using region")
-                    os.makedirs("uploads/whatsapp/profiles", exist_ok=True)
-                    profile_pic_path = f"uploads/whatsapp/profiles/{phone}.jpg"
-                    cv2.imwrite(profile_pic_path, profile_region)
-                    logger.info(f"[WhatsAppScraper] ⚠️ Saved profile region as fallback")
-                    
+                    if gray.std() < 5:
+                        default_avatar = True
+                    else:
+                        os.makedirs("uploads/whatsapp/profiles", exist_ok=True)
+                        profile_pic_path = f"uploads/whatsapp/profiles/{phone}.jpg"
+                        cv2.imwrite(profile_pic_path, profile_region)
+                if default_avatar:
+                    profile_pic_path = None
             except Exception as e:
                 logger.error(f"[WhatsAppScraper] ❌ Profile picture extraction failed: {e}")
-            
-            # Crop right drawer panel
+                profile_pic_path = None
+
+            # Crop right drawer for OCR
             drawer_left = int(width * 0.67)
             drawer_img = img[0:height, drawer_left:width]
 
-            logger.info(f"[WhatsAppScraper] 🔤 Initializing EasyOCR reader...")
             if not hasattr(self, '_ocr_reader'):
                 import easyocr
-                self._ocr_reader = easyocr.Reader(['en'], gpu=False, verbose=False)
-                logger.info(f"[WhatsAppScraper] ✓ EasyOCR reader initialized")
-            
-            logger.info(f"[WhatsAppScraper] 🔍 Running OCR on drawer region only...")
+                self._ocr_reader = easyocr.Reader(['en', 'hi'], gpu=False, verbose=False)
+
             results = self._ocr_reader.readtext(drawer_img, detail=1, paragraph=False)
-            logger.info(f"[WhatsAppScraper] 📊 OCR found {len(results)} text elements in drawer region")
-            
             results_sorted = sorted(results, key=lambda x: x[0][0][1])
             text_lines = []
             for idx, (bbox, text, confidence) in enumerate(results_sorted):
                 text_clean = text.strip()
                 y_position = bbox[0][1]
-                x_position = bbox[0][0]
-                if text_clean and len(text_clean) >= 2 and confidence > 0.2:
-                    text_lines.append({
-                        'text': text_clean,
-                        'y': y_position,
-                        'x': x_position,
-                        'confidence': confidence
-                    })
-                    logger.debug(f"[WhatsAppScraper] OCR[{idx}]: y={y_position:.0f}, x={x_position:.0f}, conf={confidence:.2f}, text='{text_clean}'")
+                if text_clean and len(text_clean) >= 2 and confidence > 0.08:
+                    text_lines.append({'text': text_clean, 'y': y_position})
+
+            logger.info("[WhatsAppScraper] 📝 OCR extracted lines from drawer:")
+            for line in text_lines:
+                logger.info(f"Line at y={line['y']}: '{line['text']}'")
 
             # Name extraction
-            name_candidates = []
-            for line in text_lines:
-                y = line['y']
-                text = line['text']
-                conf = line['confidence']
-                text_lower = text.lower()
-                # Exclude phone number, known labels, and 'add' symbol
-                if 50 <= y <= 350 and (text_lower not in ['contact info', 'about', 'add', 'media', 'mute', 'starred', 'disappearing messages']):
-                    if not text.startswith('+') and not text.replace(' ', '').isdigit() \
-                        and len(text) >= 3 and len(text) <= 50 and conf > 0.3:
-                        name_candidates.append(line)
-            # If no valid name or detected 'Add', set blank
-            if name_candidates:
-                candidate = name_candidates[0]['text']
-                if candidate.lower() == 'add':
-                    name = ''
-                else:
-                    name = candidate
-            else:
-                name = ''
-
-            # About extraction (between 'About' and 'Media, links and docs')
-            about = ''
-            about_start_idx, about_end_idx = None, None
+            name_parts = []
+            phone_row_idx = None
+            labels = [
+                "open", "add", "share", "appointment", "media", "about", "contact info",
+                "starred messages", "kept messages", "mute notifications", "disappearing messages",
+                "advanced chat privacy", "encryption"
+            ]
             for idx, line in enumerate(text_lines):
-                if 'about' in line['text'].lower():
-                    about_start_idx = idx
-                if 'media' in line['text'].lower() and 'links' in line['text'].lower() and 'docs' in line['text'].lower():
-                    if about_start_idx is not None:
-                        about_end_idx = idx
+                line_text = line['text'].replace(" ", "")
+                if line_text.startswith("+") and sum(c.isdigit() for c in line_text) >= 6:
+                    phone_row_idx = idx
+                    break
+            for idx in range((phone_row_idx or 0)+1, len(text_lines)):
+                line = text_lines[idx]
+                t = line['text'].lower().strip()
+                if not t or any(label in t for label in labels) or line['text'].startswith("+") or line['text'].isdigit():
+                    break
+                name_parts.append(line['text'])
+            name = " ".join(name_parts).strip()
+
+            # About/bio extraction - stops at first stop keyword
+            business_idx, media_idx = None, None
+            business_pattern = re.compile(r"business accouint|business account", re.IGNORECASE)
+            for idx, l in enumerate(text_lines):
+                ltext = l['text'].lower()
+                if business_pattern.search(ltext) or 'about' in ltext:
+                    business_idx = idx
+                if business_idx is not None and 'media' in ltext and 'links' in ltext and 'docs' in ltext:
+                    media_idx = idx
+                    break
+
+            # Line that indicate the end of About/Bio
+            STOP_KEYWORDS = {
+                "open now", "open by appointment only", "appointment only", "rewa madhya pradesh",
+                "madhya pradesh", "maharashtra", "uttar pradesh", "bihar", "delhi", "gujarat",
+                "starred messages", "kept messages", "mute notifications", "disappearing messages",
+                "advanced chat privacy", "encryption", "media links and docs", "rewa"
+            }
+            def is_stop_line(text):
+                norm = text.lower().strip()
+                return norm in STOP_KEYWORDS
+
+            about_parts = []
+            if business_idx is not None and media_idx is not None:
+                for idx in range(business_idx+1, media_idx):
+                    txt = text_lines[idx]['text'].strip()
+                    if not txt or txt.isdigit():
+                        continue
+                    if is_stop_line(txt):
                         break
+                    about_parts.append(txt)
+            about = "\n".join(about_parts).strip()
 
-            if about_start_idx is not None and about_end_idx is not None:
-                bio_parts = [l['text'] for l in text_lines[about_start_idx + 1 : about_end_idx] if l['text'].strip()]
-                about = ' '.join(bio_parts).strip()
-            else:
-                about = ''
-
-            # If about section contains WhatsApp labels and no user text, set to blank
-            unwanted_labels = ['starred messages', 'mute notifications', 'disappearing messages', 'advanced chat privacy', 'encryption']
-            for label in unwanted_labels:
-                if about.lower() == label:
-                    about = ''
-            # Additional fallback for empty bio (no user bio text between about and media)
-            if not about or any(label in about.lower() for label in unwanted_labels):
-                about = ''
+            # Final blank/cleanup
+            if not name or name.lower() == 'add':
+                name = ""
+            if not about:
+                about = ""
 
             logger.info(f"[WhatsAppScraper] 📊 OCR Extraction Summary: name={'✓' if name else '✗'}, about={'✓' if about else '✗'}, photo={'✓' if profile_pic_path else '✗'}")
             return name, about, profile_pic_path
@@ -1485,6 +1483,7 @@ class WhatsAppScraper:
             import traceback
             logger.error(traceback.format_exc())
             return None, None, None
+
 
     
     async def _try_extract_profile_drawer(self, clean_number: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:

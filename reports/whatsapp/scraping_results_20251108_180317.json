@@ -1,0 +1,80 @@
+[
+  {
+    "phone_number": "916397675890",
+    "display_name": null,
+    "about": "Rather than love; than money; than fame; than faith; than fairness, give me truth:",
+    "profile_picture": "uploads/whatsapp/profiles/916397675890.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-08T12:12:35.620371",
+    "input_name": "Test Contact 1"
+  },
+  {
+    "phone_number": "918707798544",
+    "display_name": null,
+    "about": "Never believe prediction that doesn't empower you;",
+    "profile_picture": "uploads/whatsapp/profiles/918707798544.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-08T12:16:08.214644",
+    "input_name": "Test Contact 2"
+  },
+  {
+    "phone_number": "917415337302",
+    "display_name": null,
+    "about": null,
+    "profile_picture": "uploads/whatsapp/profiles/917415337302.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-08T12:19:35.048380",
+    "input_name": "Test Contact 3"
+  },
+  {
+    "phone_number": "916385390568",
+    "display_name": null,
+    "about": null,
+    "profile_picture": "uploads/whatsapp/profiles/916385390568.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-08T12:23:02.848348",
+    "input_name": "Test Contact 4"
+  },
+  {
+    "phone_number": "919582520423",
+    "display_name": null,
+    "about": "Keep calm njust chill",
+    "profile_picture": "uploads/whatsapp/profiles/919582520423.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-08T12:26:29.030472",
+    "input_name": "Test Contact 5"
+  },
+  {
+    "phone_number": "918929942819",
+    "display_name": null,
+    "about": "Hey therel am using WhatsApp:",
+    "profile_picture": "uploads/whatsapp/profiles/918929942819.jpg",
+    "last_seen": null,
+    "is_available": true,
+    "status": "success",
+    "error": null,
+    "method": "auto_navigate",
+    "extraction_timestamp": "2025-11-08T12:29:55.925513",
+    "input_name": "Test Contact 6"
+  }
+]
